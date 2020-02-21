@@ -142,6 +142,7 @@ function reset()
   end
   for i=1,5 do
     g.hand[i] = new_card()
+    g.drop[i] = new_card()
   end
 end
 reset()
