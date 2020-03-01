@@ -72,6 +72,7 @@ d.stats = { x = 600, y = 20 }
 d.stat = { w = 60, h = 48 }
 d.map = { x = 100, y = 10 }
 d.tile = { w = 60, h = 52 }
+d.drop_button = { x = d.stats.x-d.stat.w,y = d.stats.y+d.stat.h*(3)  }
 d.xp_held_s = 15
 
 function triangle(x,y,w,h,ss)
@@ -101,7 +102,11 @@ function rectangle(x,y,w,h,c,s)
   set_color(c)
   love.graphics.rectangle("line", x+4,y+4,w-8,h-8)
 end
+
+--
 -- gamedata
+--
+
 function new_card()
   return { num = love.math.random(2,13),
            sym = love.math.random(1,4),
@@ -292,7 +297,10 @@ function love.mousereleased(x,y,button)
   end
 end
 
+--
 -- draw
+--
+
 function draw_card(cd,x,y)
   rectangle(x,y,d.card.w,d.card.h,a.symc[cd.sym],cd.sel)
   love.graphics.print(a.num[cd.num],x+(d.card.w/3),y+(d.card.h/5-4))
@@ -307,13 +315,15 @@ function draw_stat(i,c,s,x,y,c2)
 end
 
 function love.draw()
-  x, y = love.mouse.getPosition()
-  devug = getstat(x,y)
-  if not devug then
-    devug = "nil"
-  end
-  set_color(8,true)
   love.graphics.setLineWidth(2)
+
+  -- background
+  -- please don't delete me
+
+  set_color(8,true)
+
+  -- hand
+
   local gc = 0
   for i,cd in ipairs(g.hand) do
     if held_gi and i == held_gi then
@@ -322,6 +332,9 @@ function love.draw()
     draw_card(cd,d.hand.x+d.card.w*(i-1+gc),d.hand.y)
   end
   local sele = nil
+
+  -- stats
+
   for i,st in ipairs(a.stats_ord) do
     local ie = g.stats[st]
     local c = 15
@@ -349,7 +362,13 @@ function love.draw()
       love.graphics.print(a.stat_cost(i),d.stats.x-d.stat.w*.8,d.stats.y+d.stat.h*(i-1+.1))
     end
   end
-  draw_stat(table.getn(g.drop),6,false,d.stats.x-d.stat.w,d.stats.y+d.stat.h*(3))
+
+  -- drop_q
+
+  draw_stat(table.getn(g.drop),6,false,d.drop_button.x, d.drop_button.y)
+
+  -- map
+
   for r=1,5 do
     for c=1,(6-r) do
       if g.mapv[r][c] ~= -1 then
@@ -363,6 +382,9 @@ function love.draw()
       end
     end
   end
+
+  -- held
+
   x, y = love.mouse.getPosition()
   if held then
     for i,cd in ipairs(held) do
