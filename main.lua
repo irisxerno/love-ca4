@@ -1,4 +1,6 @@
--- utils
+-
+zsh: command not found: sl
+- utils
 function RGB(r,g,b)
   if type(r)=="table" then
     r,g,b = unpack(r)
@@ -659,8 +661,9 @@ function SwitchBoard:draw()
 end
 
 function SwitchBoard:press(name)
+  local ps = false
   if name then
-    local ps = self[name].state
+    ps = self[name].state
   end
   for i,n in ipairs(self.list) do
     self[n].state = false
