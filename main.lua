@@ -1,6 +1,3 @@
--
-zsh: command not found: sl
-- utils
 function RGB(r,g,b)
   if type(r)=="table" then
     r,g,b = unpack(r)
