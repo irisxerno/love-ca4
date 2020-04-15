@@ -17,6 +17,8 @@ else
 end
 
 inspect = require "inspect"
+binser = require "binser"
+love.filesystem.setIdentity("antsuke.ca4")
 
 font = love.graphics.newFont("SourceCodePro-Bold.ttf",20)
 love.graphics.setFont(font)
@@ -100,6 +102,15 @@ function shapes.circle(x,y,d,c)
   love.graphics.circle("fill",x,y,d)
   color:set(c)
   love.graphics.circle("line",x,y,d-4)
+end
+
+function getelem_rectangle(self,x,y)
+  lx = (x-self.x)/self.w
+  ly = (y-self.y)/self.h
+  if lx >= 0 and lx <= 1 and ly >= 0 and ly <= 1 then
+    return true
+  end
+  return false
 end
 
 --
@@ -202,6 +213,7 @@ function Map:click(x,y)
   if c and self.map[r][c].v > 0 then
     world.switch:press(false)
     world.battle = Battle(self.map[r][c].i, c, r)
+    saves:save(0)
   end
 end
 
@@ -347,7 +359,11 @@ function Hand:draw()
   Deck.draw(self)
   -- color:set(7)
   -- love.graphics.rectangle("fill",self.x,self.y+Card.h,Card.w*world.stats.hs.v,Card.h/4)
-  shapes.rectangle(self.x,self.y+Card.h,Card.w*world.stats.hs.v,Card.h/4,7)
+  local cc = 7
+  if world.battle and world.battle.death_pause then
+    cc = 9
+  end
+  shapes.rectangle(self.x,self.y+Card.h,Card.w*world.stats.hs.v,Card.h/4,cc)
 
 end
 
@@ -394,7 +410,7 @@ end
 
 Stats = Object:extend()
 Stats.x = 500
-Stats.y = 20
+Stats.y = 40
 
 function Stats:new()
   self.d = Stat(1,1)
@@ -463,14 +479,7 @@ function XP:new()
   self.focus = false
 end
 
-function XP:getelem(x,y)
-  lx = (x-self.x)/Stat.w
-  ly = (y-self.y)/Stat.h
-  if lx >= 0 and lx <= 1 and ly >= 0 and ly <= 1 then
-    return true
-  end
-  return false
-end
+XP.getelem = getelem_rectangle
 
 function XP:take(x,y)
   if self:getelem(x,y) then
@@ -615,14 +624,7 @@ function Switch:click(x,y)
   end
 end
 
-function Switch:getelem(x,y)
-  lx = (x-self.x)/Stat.w
-  ly = (y-self.y)/Stat.h
-  if lx >= 0 and lx <= 1 and ly >= 0 and ly <= 1 then
-    return true
-  end
-  return false
-end
+Switch.getelem = getelem_rectangle
 
 DropSwitch = Switch:extend()
 DropSwitch.x = Stats.x-Stat.w
@@ -642,13 +644,19 @@ function MapSwitch:text()
   return world.progress.ac
 end
 
+SaveSwitch = Switch:extend()
+SaveSwitch.x = Stats.x-Stat.w
+SaveSwitch.y = Stats.y+Stat.h
+SaveSwitch.color = 5
+
 SwitchBoard = Object:extend()
 
 function SwitchBoard:new()
   self.drop = DropSwitch()
   self.map = MapSwitch()
+  self.save = SaveSwitch()
   self.drop.state = true
-  self.list = {"drop","map"}
+  self.list = {"drop", "map", "save"}
 end
 
 function SwitchBoard:draw()
@@ -679,6 +687,297 @@ function SwitchBoard:click(x,y)
   end
 end
 
+Saves = Object:extend()
+Saves.version = 2
+
+function Saves:new()
+  self.data = {}
+  local info = love.filesystem.getInfo("save")
+  if info then
+    local contents = love.filesystem.read("save")
+    local d = binser.deserializeN(contents)
+    if d and d.version == self.version then
+      self.data = d
+    else
+      local v = d.version
+      if not v then
+        v = "unknown"
+      end
+      love.filesystem.write("save.old-"..v,contents)
+      love.filesystem.remove("save")
+    end
+  end
+end
+
+function Saves:save(ic)
+  self.data[ic] = {}
+  local sv = self.data[ic]
+  -- hand
+  sv.hand = {}
+  for k,cd in ipairs(world.hand.deck) do
+    table.insert(sv.hand,{num = cd.num, sym = cd.sym})
+  end
+  -- drop
+  sv.drop = {}
+  for k,cd in ipairs(world.drop.deck) do
+    table.insert(sv.drop,{num = cd.num, sym = cd.sym})
+  end
+  -- map
+  sv.map = {}
+  for r=1,5 do
+    sv.map[r] = {}
+    for c=1,(6-r) do
+      sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v}
+    end
+  end
+  -- stats
+  sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, }
+  -- xp
+  sv.xp = world.xp.v
+  sv.ac = world.progress.ac
+  sv.i = world.progress.i
+
+  sv.id = world.id
+
+  self:file()
+end
+
+function Saves:load(ic)
+  local sv = self.data[ic]
+  if not sv then
+    return
+  end
+
+  world.id = sv.id
+
+  -- stats
+  world.stats.d.v = sv.stats.d
+  world.stats.hs.v = sv.stats.hs
+  world.stats.ma.v = sv.stats.ma
+  sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, }
+  -- xp
+  world.xp.v = sv.xp
+  world.progress.ac = sv.ac
+  world.progress.i = sv.i
+  -- hand
+  world.hand.deck = {}
+  for k,cd in ipairs(sv.hand) do
+    local c = Card()
+    c.num = cd.num
+    c.sym = cd.sym
+    table.insert(world.hand.deck,c)
+  end
+  -- drop
+  world.drop.deck = {}
+  for k,cd in ipairs(sv.drop) do
+    local c = Card()
+    c.num = cd.num
+    c.sym = cd.sym
+    table.insert(world.drop.deck,c)
+  end
+  -- map
+  world.map.map = {}
+  for r=1,5 do
+    world.map.map[r] = {}
+    for c=1,(6-r) do
+      local t = Tile()
+      t.i = sv.map[r][c].i
+      t.v = sv.map[r][c].v
+      world.map.map[r][c] = t
+    end
+  end
+end
+
+function Saves:file()
+  self.data.version = self.version
+  love.filesystem.write("save",binser.serialize(self.data))
+end
+
+function Saves:findid(id)
+  for i=0,SaveSlots.c do
+    if self.data[i] and self.data[i].id == id then
+      return i
+    end
+  end
+  return false
+end
+
+SaveOptions = Object:extend()
+
+function SaveOptions:new()
+  self.slots = SaveSlots()
+  self.current = CurrentGame()
+  self.new = NewGame()
+end
+
+function SaveOptions:draw()
+  self.slots:draw()
+  self.current:draw()
+  self.new:draw()
+end
+
+function SaveOptions:update(x,y)
+  self.slots:update(x,y)
+  self.current:update(x,y)
+end
+
+function SaveOptions:take(x,y)
+  self.slots:take(x,y)
+  self.current:take(x,y)
+  self.new:take(x,y)
+end
+
+SaveSlots = Object:extend()
+SaveSlots.x = 20
+SaveSlots.y = 60
+SaveSlots.w = 50
+SaveSlots.h = 50
+SaveSlots.c = 6
+
+function SaveSlots:draw()
+  for i=0,self.c do
+    local c = 9
+    if i == 0 then
+      c = 10
+    end
+    shapes.rectangle(self.x+self.w*i,self.y,self.w,self.h,c,self.g == i)
+    if saves.data[i] then
+      love.graphics.print(saves.data[i].i,self.x+self.w*i+(Stat.w/8),self.y+(Stat.h/6))
+      for j=1,saves.data[i].ac do
+        shapes.rectangle(self.x+self.w*i,self.y-(Stat.h/8)*j,SaveSlots.w,Card.h/8,5)
+      end
+      love.graphics.setColor(RGB(saves.data[i].id))
+      love.graphics.rectangle("line", self.x+self.w*i+6,self.y+6,self.w-12,self.h-12)
+    end
+  end
+end
+
+function SaveSlots:update(x,y)
+  self.g = nil
+  e = self:getelem(x,y)
+  if e and world.held_save.t and world.held_save.source ~= e and (saves.data[e] or world.held_save.source ~= -2) then
+    self.g = e
+  end
+end
+
+function SaveSlots:getelem(x,y)
+  local lx = (x-self.x)/self.w
+  local ly = (y-self.y)/self.h
+  if ly>=0 and ly<=1 and (lx>=0 and lx<self.c+1) then
+    return clamp(math.floor(lx),0,self.c)
+  end
+  return nil
+end
+
+function SaveSlots:take(x,y)
+  local e = self:getelem(x,y)
+  if e and saves.data[e] then
+    world.held_save.t = true
+    world.held_save.source = e
+  end
+end
+
+CurrentGame = Object:extend()
+CurrentGame.x = SaveSlots.x + SaveSlots.w*2
+CurrentGame.y = 180
+CurrentGame.w = SaveSlots.w*(SaveSlots.c-1)
+CurrentGame.h = SaveSlots.h
+
+function CurrentGame:draw()
+  shapes.rectangle(self.x,self.y,self.w,self.h,5,self.focus)
+  love.graphics.print("~~~~~~~~~~~~~~~~",self.x+(SaveSlots.w/2),self.y+(self.h/4))
+  love.graphics.setColor(RGB(world.id))
+  love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
+end
+
+CurrentGame.getelem = getelem_rectangle
+
+function CurrentGame:update(x,y)
+  self.focus = false
+  if world.held_save.t and world.held_save.source ~= -1 and self:getelem(x,y) then
+    self.focus = true
+  end
+end
+
+function CurrentGame:take(x,y)
+  if self:getelem(x,y) then
+    world.held_save.t = true
+    world.held_save.source = -1
+  end
+end
+
+NewGame = Object:extend()
+NewGame.x = SaveSlots.x
+NewGame.y = 180
+NewGame.w = SaveSlots.w
+NewGame.h = SaveSlots.h
+
+function NewGame:draw()
+  shapes.rectangle(self.x,self.y,self.w,self.h,4,self.focus)
+  love.graphics.print("new",self.x+(SaveSlots.w/8),self.y+(SaveSlots.h/4))
+end
+
+NewGame.getelem = getelem_rectangle
+
+function NewGame:take(x,y)
+  if self:getelem(x,y) then
+    world.held_save.t = true
+    world.held_save.source = -2
+  end
+end
+
+HeldSave = Object:extend()
+
+function HeldSave:new(source)
+  self.t = false
+  self.source = source
+end
+
+function HeldSave:draw()
+  if self.t then
+    local x, y = love.mouse.getPosition()
+    local c = 9
+    if self.source == -2 then
+      c = 4
+    elseif self.source == -1 then
+      c = 5
+    elseif self.source == 0 then
+      c = 10
+    end
+    shapes.circle(x,y,20,c)
+    if self.source > -1 and saves.data[self.source] then
+      local c = saves.data[self.source].id
+      love.graphics.setColor(RGB(c))
+      love.graphics.circle("line",x,y,20-6)
+    elseif self.source == -1 then
+      love.graphics.setColor(RGB(world.id))
+      love.graphics.circle("line",x,y,20-6)
+    end
+    -- love.graphics.circle("line",x,y,20-6)
+  end
+end
+
+function HeldSave:drop(x,y)
+  if self.t then
+    -- do things like save
+    if self.source == -2 and world.save_options.current.focus then
+      world = World()
+      world.switch:press("save")
+    elseif self.source == -2 and world.save_options.slots.g then
+      saves.data[world.save_options.slots.g] = nil
+      saves:file()
+    elseif self.source == -1 and world.save_options.slots.g then
+      saves:save(world.save_options.slots.g)
+    elseif self.source > -1 and world.save_options.current.focus then
+      saves:load(self.source)
+    elseif self.source > -1 and world.save_options.slots.g then
+      saves.data[world.save_options.slots.g] = saves.data[self.source]
+      saves:file()
+    end
+  end
+  self.t = false
+end
+
 --
 -- World
 --
@@ -686,11 +985,18 @@ end
 World = Object:extend()
 
 function World:new()
+  self.touch = Touch()
   self.progress = { ac = 0, i = 0 }
+  while not self.id do
+    local id = {love.math.random(0,255),love.math.random(0,255),love.math.random(0,255)}
+    if not saves:findid(id) then
+      self.id = id
+    end
+  end
   self.hand = Hand()
   self.drop = Drop()
   self.map = Map()
-  self.touch = Touch()
+  self.save_options = SaveOptions()
 
   self.switch = SwitchBoard()
   self.stats = Stats()
@@ -698,6 +1004,7 @@ function World:new()
 
   self.held_cards = HeldCards()
   self.held_xp = HeldXP()
+  self.held_save = HeldSave()
 end
 
 function World:draw()
@@ -708,19 +1015,21 @@ function World:draw()
     self.drop:draw()
   elseif self.switch.map.state then
     self.map:draw()
+  elseif self.switch.save.state then
+    self.save_options:draw()
   end
-  color:set(15)
-  love.graphics.print(world.progress.i, 650,350)
+  -- color:set(15)
+  -- love.graphics.print(world.progress.i, 650,350)
   if not world.battle then
-    self.switch:draw()
-    self.switch:draw()
     self.stats:draw()
     self.xp:draw()
+    self.switch:draw()
   else
     self.battle:draw()
   end
   self.held_cards:draw()
   self.held_xp:draw()
+  self.held_save:draw()
 end
 
 function World:update()
@@ -730,6 +1039,7 @@ function World:update()
   world.held_cards:update(x,y)
   world.xp:update(x,y)
   world.stats:update(x,y)
+  world.save_options:update(x,y)
 end
 
 Touch = Object:extend()
@@ -741,8 +1051,11 @@ end
 
 function Touch:pressed(x,y)
   self.x, self.y = x, y
-  if world.battle and world.battle.pause then
+  if world.battle and world.battle.attack_pause then
     world.battle:damage()
+    self.state = nil
+  elseif world.battle and world.battle.death_pause then
+    world = World()
     self.state = nil
   else
     self.state = "touch"
@@ -751,21 +1064,21 @@ end
 
 function Touch:released(x,y)
   if self.state == "touch" then
+    if not world.battle then
+      world.switch:click(x,y)
+    end
+    if world.switch.map.state then
+      world.map:click(x,y)
+    end
     world.hand:click(x,y,self.x,self.y)
-
     if world.switch.drop.state then
       world.drop:click(x,y,self.x,self.y)
     end
 
-    if world.switch.map.state then
-      world.map:click(x,y)
-    end
-    if not world.battle then
-      world.switch:click(x,y)
-    end
   elseif self.state == "drag" then
     world.held_cards:drop()
     world.held_xp:drop(x,y)
+    world.held_save:drop(x,y)
   end
   self.state = nil
 end
@@ -777,6 +1090,9 @@ function Touch:update(x,y)
     world.held_cards:take(self.x,self.y)
     if not world.battle then
       world.xp:take(self.x,self.y)
+    end
+    if world.switch.save.state then
+      world.save_options:take(self.x,self.y)
     end
   end
 end
@@ -793,7 +1109,8 @@ function Battle:new(hp,c,r)
   self.armor = Armor(r)
   self.my = MyAttack()
   self.enem = false
-  self.pause = false
+  self.attack_pause = false
+  self.death_pause = false
   self.scale = 0
   self.c = c
   self.r = r
@@ -811,9 +1128,13 @@ end
 function Battle:attack()
   self.enem = EnemAttack()
   for i=1,math.min(table.getn(self.my.deck),self.body.hp) do
-    self.enem.deck[i] = Card()
+    if self.body.new_hp > 0 then
+      self.enem.deck[i] = Card()
+      self.body.new_hp = self.body.new_hp - 1
+    else
+      self.enem.deck[i] = table.remove(self.body.edeck)
+    end
   end
-  world.progress.i = world.progress.i + table.getn(self.my.deck)
   self.my.a = self.my:count()
   self.enem.a = self.enem:count(self.armor.kinds)
   if self.my.a > self.enem.a then
@@ -821,7 +1142,7 @@ function Battle:attack()
   elseif self.enem.a > self.my.a then
     self.scale = -1
   end
-  self.pause = true
+  self.attack_pause = true
 end
 
 function Battle:damage()
@@ -832,6 +1153,10 @@ function Battle:damage()
   end
   if self.enem.a <= self.my.a then
     self.body.hp = self.body.hp - table.getn(self.my.deck)
+  else
+    for k,cd in ipairs(self.my.deck) do
+      table.insert(self.body.edeck,cd)
+    end
   end
   self.my = MyAttack()
   self.enem = nil
@@ -844,12 +1169,15 @@ function Battle:damage()
       world.progress.ac = world.progress.ac + 1
       world.map = Map()
     end
-    world.switch.map.state = false
-    world.switch.drop.state = true
+    world.switch:press("drop")
     world.battle = nil
+    saves:save(0)
   end
-  self.pause = false
+  self.attack_pause = false
   self.scale = 0
+  if table.getn(world.hand.deck) < 1 then
+    self.death_pause = true
+  end
 end
 
 Body = Object:extend()
@@ -859,11 +1187,18 @@ Body.y = 70
 function Body:new(hp)
   self.hp = hp
   self.o_hp = hp
+  self.new_hp = hp
+  self.edeck = {}
+  self.edeck_l = 0
 end
 
 function Body:draw()
   shapes.rectangle(self.x,self.y,Stat.w,Stat.h,9)
   love.graphics.print(self.hp,self.x+(Stat.w/3),self.y+(Stat.h/5))
+--  for i=1,self.edeck_l do
+  for i=1,table.getn(self.edeck) do
+    shapes.rectangle(self.x,self.y-(Stat.h/8)*i,Stat.w,Card.h/8,5)
+  end
 end
 
 Armor = Object:extend()
@@ -947,6 +1282,7 @@ end
 --
 
 function love.load()
+  saves = Saves()
   world = World()
 end
 
@@ -976,7 +1312,6 @@ function love.update(dt)
 end
 
 function love.keypressed(k)
-  print(k)
   if k == "e" then
     world = World()
     debug.string = ""
