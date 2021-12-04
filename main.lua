@@ -1,3 +1,22 @@
+function table_take(t,m)
+  local newt = {}
+  l = 1
+  for i,v in ipairs(t) do
+    if l > (m+1) then
+      return newt
+    end
+    newt[i] = t[i]
+    l = l + 1
+  end
+  return newt
+end
+
+function pretty_time(t)
+  sec = t % 60
+  min = math.floor(t/60)
+  return string.format("%02d:%02d", min, sec)
+end
+
 function RGB(r,g,b)
   if type(r)=="table" then
     r,g,b = unpack(r)
@@ -21,10 +40,12 @@ binser = require "binser"
 love.filesystem.setIdentity("antsuke.ca4")
 
 font = love.graphics.newFont("SourceCodePro-Bold.ttf",20)
+font_small = love.graphics.newFont("NotoSansJP-Regular.otf",14)
 love.graphics.setFont(font)
 
 -- "assets"
 a = {}
+a.maxgeno = 75
 a.sym = {"β","δ","λ","φ"}
 a.symc = {9,10,12,13}
 a.num = {"1","2","3","4","5","6","7","8","9","x","J","Q","K"}
@@ -166,7 +187,7 @@ function Tile:generate(r)
 end
 
 Map = Object:extend()
-Map.x = 40
+Map.x = 60
 Map.y = 0
 
 function Map:new()
@@ -211,9 +232,13 @@ end
 function Map:click(x,y)
   local c,r = self:getelem(x,y)
   if c and self.map[r][c].v > 0 then
+    if not world.progress.hardcore then
+      saves:save(0)
+    else
+      saves:clear()
+    end
     world.switch:press(false)
     world.battle = Battle(self.map[r][c].i, c, r)
-    saves:save(0)
   end
 end
 
@@ -351,7 +376,7 @@ function Deck:count(kinds)
 end
 
 Hand = Deck:extend()
-Hand.x = 30
+Hand.x = 50
 Hand.y = 300
 Hand.source = "hand"
 
@@ -368,13 +393,14 @@ function Hand:draw()
 end
 
 Drop = Deck:extend()
-Drop.x = 40
+Drop.x = 50
 Drop.y = 50
 Drop.source = "drop"
 
 function Drop:draw()
   Deck.draw(self)
-  shapes.rectangle(self.x+Card.w*table.getn(self.deck),self.y-Card.h/4,Card.w*world.stats.d.v,Card.h/4,16)
+  shapes.rectangle(self.x,self.y+Card.h,Card.w*world.stats.d.v,Card.h/4,7)
+  -- shapes.rectangle(self.x+Card.w*table.getn(self.deck),self.y-Card.h/4,Card.w*world.stats.d.v,Card.h/4,16)
 end
 
 --
@@ -413,10 +439,10 @@ Stats.x = 500
 Stats.y = 40
 
 function Stats:new()
-  self.d = Stat(1,1)
+  self.d = Stat(5,1)
   self.hs = Stat(5,1)
   self.ma = Stat(5,5)
-  self.table = {self.ma, self.hs, self.d}
+  self.table = {self.ma, self.d, self.hs}
 end
 
 function Stats:draw()
@@ -524,6 +550,7 @@ end
 
 function HeldCards:update(x,y)
   world.hand.g = nil
+  world.drop.g = nil
   if world.battle then
     world.battle.my.g = nil
   end
@@ -531,6 +558,10 @@ function HeldCards:update(x,y)
     local e = world.hand:getelem(x,y,true)
     if e then
       world.hand.g = e
+    end
+    local e = world.drop:getelem(x,y,true)
+    if e then
+      world.drop.g = e
     end
     if world.battle then
       e = world.battle.my:getelem(x,y,true)
@@ -552,6 +583,12 @@ function HeldCards:drop()
         table.insert(world.hand.deck, world.hand.g, cd:clean())
         world.hand.g = world.hand.g + 1
       end
+    elseif world.drop.g and world.stats.d.v >= (table.getn(world.drop.deck) + table.getn(self.deck)) then
+      for k,cd in ipairs(self.deck) do
+        table.insert(world.drop.deck, world.drop.g, cd:clean())
+        world.drop.g = world.drop.g + 1
+      end
+
     elseif world.battle and world.battle.my.g and world.stats.ma.v >= (table.getn(self.deck)) then
       for k,cd in ipairs(self.deck) do
         table.insert(world.battle.my.deck, world.battle.my.g, cd:clean())
@@ -626,6 +663,16 @@ end
 
 Switch.getelem = getelem_rectangle
 
+
+LeaderboardSwitch = Switch:extend()
+LeaderboardSwitch.x = Stats.x-Stat.w
+LeaderboardSwitch.y = Stats.y
+LeaderboardSwitch.color = 7
+
+function LeaderboardSwitch:text()
+  return string.format("%s%%",math.floor(100*world.progress.geno/a.maxgeno))
+end
+
 DropSwitch = Switch:extend()
 DropSwitch.x = Stats.x-Stat.w
 DropSwitch.y = Stats.y+Stat.h*3
@@ -644,6 +691,7 @@ function MapSwitch:text()
   return world.progress.ac
 end
 
+
 SaveSwitch = Switch:extend()
 SaveSwitch.x = Stats.x-Stat.w
 SaveSwitch.y = Stats.y+Stat.h
@@ -655,8 +703,8 @@ function SwitchBoard:new()
   self.drop = DropSwitch()
   self.map = MapSwitch()
   self.save = SaveSwitch()
-  self.drop.state = true
-  self.list = {"drop", "map", "save"}
+  self.leaderboard = LeaderboardSwitch()
+  self.list = {"drop", "map", "save", "leaderboard"}
 end
 
 function SwitchBoard:draw()
@@ -687,17 +735,140 @@ function SwitchBoard:click(x,y)
   end
 end
 
+Leaderboards = Object:extend()
+Leaderboards.version = 0
+
+function Leaderboards:new()
+  self.data = {
+    normal = {
+      quick = {},
+      low = {},
+      geno = {}
+    },
+    hardcore = {
+      quick = {},
+      low = {},
+      geno = {}
+    }
+  }
+  local info = love.filesystem.getInfo("leaderboards")
+  if info then
+    local contents = love.filesystem.read("leaderboards")
+    local d = binser.deserializeN(contents)
+    if d and d.version == self.version then
+      self.data = d
+    else
+      local v = d.version
+      if not v then
+        v = "unknown"
+      end
+      love.filesystem.write("leaderboards.old-"..v,contents)
+      love.filesystem.remove("leaderboards")
+    end
+  end
+end
+
+function Leaderboards:add()
+  local entry = {
+    date = os.date("%F %T"),
+    id = world.id,
+    i = world.progress.i,
+    time = math.floor(saves:get_time()),
+    geno = world.progress.geno
+  }
+  if not world.progress.hardcore then
+    entry.deaths = saves.deaths
+  end
+  local slot
+  if world.progress.hardcore then
+    slot = self.data.hardcore
+  else
+    slot = self.data.normal
+  end
+  table.insert(slot.quick,entry)
+  table.sort(slot.quick, function (k1, k2) return k1.time < k2.time end)
+  slot.quick = table_take(slot.quick, 5)
+  table.insert(slot.low,entry)
+  table.sort(slot.low, function (k1, k2)
+    if k1.i == k2.i then return k1.time < k2.time end
+    return k1.i < k2.i end)
+  slot.low = table_take(slot.low, 5)
+  table.insert(slot.geno,entry)
+  table.sort(slot.geno, function (k1, k2)
+    if k1.geno == k2.geno then return k1.time < k2.time end
+    return k1.geno > k2.geno end)
+  slot.geno = table_take(slot.geno, 5)
+
+  self:file()
+end
+
+function Leaderboards:file()
+  self.data.version = self.version
+  love.filesystem.write("leaderboards",binser.serialize(self.data))
+end
+
+LeaderboardShow = Object:extend()
+LeaderboardShow.x = 40
+LeaderboardShow.y = 40
+LeaderboardShow.w = 230
+LeaderboardShow.h = 90
+LeaderboardShow.t = 12
+LeaderboardShow.t2 = 15
+
+
+function LeaderboardShow:draw()
+  color:set(1)
+  love.graphics.setFont(font_small)
+
+  local catg = {"quick", "low", "geno"}
+  local desc = {"素早い", "最小限", "大量虐殺"}
+  love.graphics.print("レギュラー", self.x, self.y-2*self.t2)
+  for i1,v1 in ipairs(catg) do
+    vv1 = desc[i1]
+    love.graphics.print(vv1, self.x, self.y-self.t2+self.h*(i1-1))
+    for i2,v in ipairs(leaderboards.data.normal[v1]) do
+      love.graphics.setColor(RGB(v.id))
+      love.graphics.print(string.format("け %d.\t殺 %d%%\t亡 %d*\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), v.deaths, pretty_time(v.time)), self.x, self.y+self.t*(i2-1)+self.h*(i1-1))
+    end
+    color:set(1)
+  end
+  love.graphics.print("ハードコア", self.x+self.w, self.y-2*self.t2)
+  for i1,v1 in ipairs(catg) do
+    vv1 = desc[i1]
+    love.graphics.print(vv1, self.x+self.w, self.y-self.t2+self.h*(i1-1))
+    for i2,v in ipairs(leaderboards.data.hardcore[v1]) do
+      love.graphics.setColor(RGB(v.id))
+      love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h*(i1-1))
+    end
+    color:set(1)
+  end
+
+  -- love.graphics.print(inspect(leaderboards.data), self.x, self.y)
+
+  love.graphics.setFont(font)
+end
+
 Saves = Object:extend()
-Saves.version = 2
+Saves.version = 4
+
+function Saves:get_time()
+  return saves.add_time + (love.timer.getTime() - saves.start_time)
+end
 
 function Saves:new()
   self.data = {}
+  self.deaths = 0
+  self.start_time = nil
+  self.add_time = 0
+  self.start_time = love.timer.getTime()
   local info = love.filesystem.getInfo("save")
   if info then
     local contents = love.filesystem.read("save")
     local d = binser.deserializeN(contents)
     if d and d.version == self.version then
       self.data = d
+      self.deaths = d.deaths
+      self.add_time = d.add_time
     else
       local v = d.version
       if not v then
@@ -709,7 +880,18 @@ function Saves:new()
   end
 end
 
+function Saves:delete(ic)
+  self.data[ic] = nil
+  self:file()
+end
+
 function Saves:save(ic)
+  if not world.map then
+    return
+  end
+  if world.battle then
+    return
+  end
   self.data[ic] = {}
   local sv = self.data[ic]
   -- hand
@@ -736,6 +918,7 @@ function Saves:save(ic)
   sv.xp = world.xp.v
   sv.ac = world.progress.ac
   sv.i = world.progress.i
+  sv.geno = world.progress.geno
 
   sv.id = world.id
 
@@ -759,6 +942,7 @@ function Saves:load(ic)
   world.xp.v = sv.xp
   world.progress.ac = sv.ac
   world.progress.i = sv.i
+  world.progress.geno = sv.geno
   -- hand
   world.hand.deck = {}
   for k,cd in ipairs(sv.hand) do
@@ -788,8 +972,18 @@ function Saves:load(ic)
   end
 end
 
+function Saves:clear()
+  self.data = {}
+  self.deaths = 0
+  self.start_time = love.timer.getTime()
+  self.add_time = 0
+  self:file()
+end
+
 function Saves:file()
   self.data.version = self.version
+  self.data.deaths = self.deaths
+  self.data.add_time = self:get_time()
   love.filesystem.write("save",binser.serialize(self.data))
 end
 
@@ -807,28 +1001,37 @@ SaveOptions = Object:extend()
 function SaveOptions:new()
   self.slots = SaveSlots()
   self.current = CurrentGame()
+  self.hardcore = HardcoreGame()
   self.new = NewGame()
 end
 
 function SaveOptions:draw()
-  self.slots:draw()
+  if not world.progress.hardcore then
+    self.slots:draw()
+  end
   self.current:draw()
+  self.hardcore:draw()
   self.new:draw()
 end
 
 function SaveOptions:update(x,y)
-  self.slots:update(x,y)
+  if not world.progress.hardcore then
+    self.slots:update(x,y)
+  end
   self.current:update(x,y)
+  self.hardcore:update(x,y)
 end
 
 function SaveOptions:take(x,y)
-  self.slots:take(x,y)
+  if not world.progress.hardcore then
+    self.slots:take(x,y)
+  end
   self.current:take(x,y)
   self.new:take(x,y)
 end
 
 SaveSlots = Object:extend()
-SaveSlots.x = 20
+SaveSlots.x = 40
 SaveSlots.y = 60
 SaveSlots.w = 50
 SaveSlots.h = 50
@@ -880,12 +1083,16 @@ end
 CurrentGame = Object:extend()
 CurrentGame.x = SaveSlots.x + SaveSlots.w*2
 CurrentGame.y = 180
-CurrentGame.w = SaveSlots.w*(SaveSlots.c-1)
+CurrentGame.w = SaveSlots.w*(SaveSlots.c-2)
 CurrentGame.h = SaveSlots.h
 
 function CurrentGame:draw()
-  shapes.rectangle(self.x,self.y,self.w,self.h,5,self.focus)
-  love.graphics.print("~~~~~~~~~~~~~~~~",self.x+(SaveSlots.w/2),self.y+(self.h/4))
+  local c = 5
+  if not world.map then
+    c = 1
+  end
+  shapes.rectangle(self.x,self.y,self.w,self.h,c,self.focus)
+  love.graphics.print("~~~~~~~~~~~~",self.x+(SaveSlots.w/2),self.y+(self.h/4))
   love.graphics.setColor(RGB(world.id))
   love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
 end
@@ -900,11 +1107,47 @@ function CurrentGame:update(x,y)
 end
 
 function CurrentGame:take(x,y)
+  if not world.map or world.progress.hardcore then
+    return
+  end
   if self:getelem(x,y) then
     world.held_save.t = true
     world.held_save.source = -1
   end
 end
+
+HardcoreGame = Object:extend()
+HardcoreGame.x = CurrentGame.x + SaveSlots.w*(SaveSlots.c-2)
+HardcoreGame.y = 180
+HardcoreGame.w = SaveSlots.w
+HardcoreGame.h = SaveSlots.h
+
+function HardcoreGame:draw()
+  shapes.rectangle(self.x,self.y,self.w,self.h,8,self.focus)
+  love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
+  if world.progress.hardcore then
+    love.graphics.setColor(RGB(world.id))
+    love.graphics.print(saves.data[7].i,self.x+(Stat.w/8),self.y+(Stat.h/6))
+    love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
+  end
+end
+
+HardcoreGame.getelem = getelem_rectangle
+
+function HardcoreGame:update(x,y)
+  self.focus = false
+  if world.held_save.t and world.held_save.source == -2 and self:getelem(x,y) then
+    self.focus = true
+  end
+end
+
+function HardcoreGame:take(x,y)
+  if self:getelem(x,y) then
+    world.held_save.t = true
+    world.held_save.source = -1
+  end
+end
+
 
 NewGame = Object:extend()
 NewGame.x = SaveSlots.x
@@ -914,7 +1157,8 @@ NewGame.h = SaveSlots.h
 
 function NewGame:draw()
   shapes.rectangle(self.x,self.y,self.w,self.h,4,self.focus)
-  love.graphics.print("new",self.x+(SaveSlots.w/8),self.y+(SaveSlots.h/4))
+
+  love.graphics.print("++",self.x+(SaveSlots.w/4),self.y+(SaveSlots.h/4))
 end
 
 NewGame.getelem = getelem_rectangle
@@ -961,11 +1205,18 @@ function HeldSave:drop(x,y)
   if self.t then
     -- do things like save
     if self.source == -2 and world.save_options.current.focus then
+      saves:clear()
       world = World()
       world.switch:press("save")
     elseif self.source == -2 and world.save_options.slots.g then
-      saves.data[world.save_options.slots.g] = nil
+      saves:delete(world.save_options.slots.g)
       saves:file()
+    elseif self.source == -2 and world.save_options.hardcore.focus then
+      saves:clear()
+      world = World()
+      world.progress.hardcore = true
+      world.switch:press("save")
+      saves:save(7)
     elseif self.source == -1 and world.save_options.slots.g then
       saves:save(world.save_options.slots.g)
     elseif self.source > -1 and world.save_options.current.focus then
@@ -985,8 +1236,9 @@ end
 World = Object:extend()
 
 function World:new()
+  self.leaderboard_show = LeaderboardShow()
   self.touch = Touch()
-  self.progress = { ac = 0, i = 0 }
+  self.progress = { ac = 0, i = 0, hardcore = false, geno = 0 }
   while not self.id do
     local id = {love.math.random(0,255),love.math.random(0,255),love.math.random(0,255)}
     if not saves:findid(id) then
@@ -1013,10 +1265,13 @@ function World:draw()
   self.hand:draw()
   if self.switch.drop.state then
     self.drop:draw()
-  elseif self.switch.map.state then
+  elseif self.switch.map.state and world.map then
     self.map:draw()
   elseif self.switch.save.state then
     self.save_options:draw()
+  elseif self.switch.leaderboard.state then
+    self.leaderboard_show:draw()
+
   end
   -- color:set(15)
   -- love.graphics.print(world.progress.i, 650,350)
@@ -1056,6 +1311,14 @@ function Touch:pressed(x,y)
     self.state = nil
   elseif world.battle and world.battle.death_pause then
     world = World()
+    if not world.progress.hardcore then
+      saves:load(0)
+      saves.deaths = saves.deaths + 1
+      saves:file()
+      world.switch:press("map")
+    else
+      saves:clear()
+    end
     self.state = nil
   else
     self.state = "touch"
@@ -1067,7 +1330,7 @@ function Touch:released(x,y)
     if not world.battle then
       world.switch:click(x,y)
     end
-    if world.switch.map.state then
+    if world.switch.map.state and world.map then
       world.map:click(x,y)
     end
     world.hand:click(x,y,self.x,self.y)
@@ -1161,17 +1424,26 @@ function Battle:damage()
   self.my = MyAttack()
   self.enem = nil
   if self.body.hp <= 0 then
-    for i=1,math.min(world.stats.d.v, self.body.o_hp + self.armor.nk) do
+    for i=1,math.min(world.stats.d.v - #world.drop.deck, self.body.o_hp + self.armor.nk) do
       table.insert(world.drop.deck, Card())
     end
     world.map:reveal(self.c,self.r)
     if self.r == 5 then
       world.progress.ac = world.progress.ac + 1
-      world.map = Map()
+      if world.progress.ac < 5 then
+        world.map = Map()
+      else
+        saves:clear()
+        leaderboards:add()
+        world.switch:press("leaderboard")
+      end
     end
     world.switch:press("drop")
     world.battle = nil
-    saves:save(0)
+    world.progress.geno = world.progress.geno+1
+    if world.progress.hardcore then
+      saves:save(7)
+    end
   end
   self.attack_pause = false
   self.scale = 0
@@ -1195,7 +1467,6 @@ end
 function Body:draw()
   shapes.rectangle(self.x,self.y,Stat.w,Stat.h,9)
   love.graphics.print(self.hp,self.x+(Stat.w/3),self.y+(Stat.h/5))
---  for i=1,self.edeck_l do
   for i=1,table.getn(self.edeck) do
     shapes.rectangle(self.x,self.y-(Stat.h/8)*i,Stat.w,Card.h/8,5)
   end
@@ -1283,10 +1554,22 @@ end
 
 function love.load()
   saves = Saves()
+  leaderboards = Leaderboards()
   world = World()
+  world.switch:press("drop")
+  if saves.data[7] then
+    saves:load(7)
+    world.progress.hardcore = true
+    world.switch:press("map")
+  elseif saves.data[0] then
+    saves:load(0)
+    world.switch:press("save")
+  end
+
 end
 
 function love.draw()
+  love.graphics.scale(global_scale)
   world:draw()
   if debug.show then
     color:set(1)
@@ -1322,4 +1605,8 @@ function love.keypressed(k)
   if k == "y" then
     debug.show = not debug.show
   end
+end
+
+function love.quit()
+  saves:file()
 end
