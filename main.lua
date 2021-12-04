@@ -1343,6 +1343,9 @@ function Touch:released(x,y)
     world.held_xp:drop(x,y)
     world.held_save:drop(x,y)
   end
+  if world.battle then
+    world.battle.body:click(x,y)
+  end
   self.state = nil
 end
 
@@ -1411,20 +1414,23 @@ end
 function Battle:damage()
   if self.my.a > self.enem.a then
     for k,cd in ipairs(self.enem.deck) do
-      table.insert(world.hand.deck,cd:clean())
+      table.insert(world.hand.deck, cd:clean())
     end
   end
   if self.enem.a <= self.my.a then
-    self.body.hp = self.body.hp - table.getn(self.my.deck)
+    self.body.hp = self.body.hp - table.getn(self.enem.deck)
   else
     for k,cd in ipairs(self.my.deck) do
-      table.insert(self.body.edeck,cd)
+      table.insert(self.body.edeck, cd:clean())
+    end
+    for i=1,math.min(table.getn(self.my.deck), table.getn(world.drop.deck)) do
+      table.insert(world.hand.deck, table.remove(world.drop.deck, 1))
     end
   end
   self.my = MyAttack()
   self.enem = nil
   if self.body.hp <= 0 then
-    for i=1,math.min(world.stats.d.v - #world.drop.deck, self.body.o_hp + self.armor.nk) do
+    for i=1,math.min(world.stats.d.v - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
       table.insert(world.drop.deck, Card())
     end
     world.map:reveal(self.c,self.r)
@@ -1455,6 +1461,8 @@ end
 Body = Object:extend()
 Body.x = 100
 Body.y = 70
+Body.w = Stat.w
+Body.h = Stat.h
 
 function Body:new(hp)
   self.hp = hp
@@ -1462,15 +1470,38 @@ function Body:new(hp)
   self.new_hp = hp
   self.edeck = {}
   self.edeck_l = 0
+  self.reset_button = false
 end
 
 function Body:draw()
-  shapes.rectangle(self.x,self.y,Stat.w,Stat.h,9)
-  love.graphics.print(self.hp,self.x+(Stat.w/3),self.y+(Stat.h/5))
+  shapes.rectangle(self.x,self.y,self.w,self.h,9, self.reset_button)
+  love.graphics.print(self.hp,self.x+(self.w/3),self.y+(self.h/5))
   for i=1,table.getn(self.edeck) do
-    shapes.rectangle(self.x,self.y-(Stat.h/8)*i,Stat.w,Card.h/8,5)
+    shapes.rectangle(self.x,self.y-(self.h/8)*i,self.w,Card.h/8,5)
   end
 end
+
+function Body:click(x,y)
+  if self:getelem(x,y) then
+    if not self.reset_button then
+      self.reset_button = true
+    else
+      world = World()
+      if not world.progress.hardcore then
+        saves:load(0)
+        saves.deaths = saves.deaths + 1
+        saves:file()
+        world.switch:press("map")
+      else
+        saves:clear()
+      end
+    end
+  elseif self.reset_button then
+    self.reset_button = false
+  end
+end
+
+Body.getelem = getelem_rectangle
 
 Armor = Object:extend()
 Armor.x = 50
