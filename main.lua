@@ -191,11 +191,21 @@ function Tile:generate(ac, r)
     self.i = self.i + rolltile(math.min(5,r_ac))
     r_ac = r_ac - 5
   end
-  self.deck = {}
+  self.deck_kinds = {0,0,0,0}
   for i=1,self.i do
-    table.insert(self.deck, Card())
+    local myi = love.math.random(1,4)
+    self.deck_kinds[myi] = self.deck_kinds[myi] + 1
   end
-  self.armor = Armor(ac, r)
+
+  local ar_c = r + ac*5 - 1
+  local used_kinds = {0,0,0,0}
+  for i=1,ar_c do
+    local k = love.math.random(1,4)
+    if used_kinds[k] < ac + 1 then
+      used_kinds[k] = used_kinds[k] + 1
+    end
+  end
+  self.armor_kinds = used_kinds
 end
 
 Map = Object:extend()
@@ -869,7 +879,7 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 5
+Saves.version = 6
 
 function Saves:get_time()
   return saves.add_time + (love.timer.getTime() - saves.start_time)
@@ -929,18 +939,7 @@ function Saves:save(ic)
   for r=1,5 do
     sv.map[r] = {}
     for c=1,(6-r) do
-      local tdeck = {}
-      for k,cd in ipairs(world.map.map[r][c].deck) do
-        table.insert(tdeck,{num = cd.num, sym = cd.sym})
-      end
-      local tarmor = {
-        ar_c = world.map.map[r][c].armor.ar_c,
-        kinds = world.map.map[r][c].armor.kinds,
-        used_kinds = world.map.map[r][c].armor.used_kinds,
-        nk = world.map.map[r][c].armor.nk,
-        tk = world.map.map[r][c].armor.tk,
-      }
-      sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v, deck = tdeck, armor = tarmor }
+      sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v, deck_kinds = world.map.map[r][c].deck_kinds, armor_kinds = world.map.map[r][c].armor_kinds }
     end
   end
   -- stats
@@ -998,21 +997,8 @@ function Saves:load(ic)
       local t = Tile()
       t.i = sv.map[r][c].i
       t.v = sv.map[r][c].v
-      local tdeck = {}
-      for k,cd in ipairs(sv.map[r][c].deck) do
-        local c = Card()
-        c.num = cd.num
-        c.sym = cd.sym
-        table.insert(tdeck,c)
-      end
-      t.deck = tdeck
-      local tarmor = Armor()
-      tarmor.ar_c = sv.map[r][c].armor.ar_c
-      tarmor.kinds = sv.map[r][c].armor.kinds
-      tarmor.used_kinds = sv.map[r][c].armor.used_kinds
-      tarmor.nk = sv.map[r][c].armor.nk
-      tarmor.tk = sv.map[r][c].armor.tk
-      t.armor = tarmor
+      t.deck_kinds = sv.map[r][c].deck_kinds
+      t.armor_kinds = sv.map[r][c].armor_kinds
       world.map.map[r][c] = t
     end
   end
@@ -1417,8 +1403,8 @@ end
 Battle = Object:extend()
 
 function Battle:new(tile,c,r)
-  self.body = Body(tile)
-  self.armor = tile.armor
+  self.body = Body(tile.deck_kinds)
+  self.armor = Armor(tile.armor_kinds, r, world.progress.ac)
   self.my = MyAttack()
   self.enem = false
   self.attack_pause = false
@@ -1465,7 +1451,7 @@ function Battle:damage()
     end
   end
 
-  if self.enem.a <= self.my.a then
+  if self.my.a >= self.enem.a then
     self.body.stolen = self.body.stolen - table.getn(self.enem.deck)
     if self.body.stolen < 0 then
       self.body.stolen = 0
@@ -1473,6 +1459,7 @@ function Battle:damage()
   else
     for k,cd in ipairs(self.my.deck) do
       table.insert(self.body.deck, cd:clean())
+      self.stolen = self.stolen + 1
     end
 
     for i=1,math.min(table.getn(self.my.deck), table.getn(world.drop.deck)) do
@@ -1526,12 +1513,23 @@ Body.y = 70
 Body.w = Stat.w
 Body.h = Stat.h
 
-function Body:new(tile)
-  self.hp = tile.i
-  self.o_hp = self.hp
-  self.stolen = 0
-  self.deck = tile.deck
+function Body:new(deck_kinds)
   self.reset_button = false
+  self.stolen = 0
+
+  self.hp = 0
+  self.deck = {}
+
+  for k=1,4 do
+    for i=1,deck_kinds[k] do
+      local ocard = Card()
+      ocard.sym = k
+      table.insert(self.deck, ocard)
+      self.hp = self.hp + 1
+    end
+  end
+
+  self.o_hp = self.hp
 end
 
 function Body:draw()
@@ -1569,28 +1567,23 @@ Armor.x = 50
 Armor.y = 40
 Armor.cd = 25
 
-function Armor:new(ac, r)
-  if ac == nil then
-    return
-  end
-  self.ar_c = r + ac*5 - 1
+function Armor:new(armor_kinds, r, ac)
+  self.guessed_arc = r + ac*5 - 1
   self.kinds = {1,1,1,1}
-  self.used_kinds = {0,0,0,0}
+  self.used_kinds = armor_kinds
   self.nk = 0
   self.tk = 0
-  for i=1,self.ar_c do
-    local k = love.math.random(1,4)
-    local v = love.math.random(2,13)
-    if r == 5 then
-      v = math.max(v,love.math.random(2,13))
+  for k=1,4 do
+    if self.used_kinds[k] ~= 0 then
+      self.tk = self.tk + 1
     end
-    if self.used_kinds[k] < ac + 1 then
-      if self.used_kinds[k] == 0 then
-        self.tk = self.tk + 1
+    for i=1,self.used_kinds[k] do
+      local v = love.math.random(2,13)
+      if r == 5 then
+        v = math.max(v,love.math.random(2,13))
       end
       self.kinds[k] = self.kinds[k]*v
-      self.used_kinds[k] = self.used_kinds[k] + 1
-      self.nk = self.nk+1
+      self.nk = self.nk + 1
     end
   end
 end
