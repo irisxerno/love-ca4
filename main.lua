@@ -1,3 +1,10 @@
+function table_shuf(t)
+  for i = #t, 2, -1 do
+    local j = love.math.random(i)
+    t[i], t[j] = t[j], t[i]
+  end
+end
+
 function table_take(t,m)
   local newt = {}
   l = 1
@@ -177,25 +184,32 @@ function Tile:new()
   self.i = -1
 end
 
-function Tile:generate(r)
-  local r_ac = r + world.progress.ac
+function Tile:generate(ac, r)
+  local r_ac = r + ac
   self.i = 0
   while r_ac > 0 do
     self.i = self.i + rolltile(math.min(5,r_ac))
     r_ac = r_ac - 5
   end
+  self.deck = {}
+  for i=1,self.i do
+    table.insert(self.deck, Card())
+  end
+  self.armor = Armor(ac, r)
 end
 
 Map = Object:extend()
 Map.x = 60
 Map.y = 0
 
-function Map:new()
+function Map:new(ac)
+  self.ac = ac
   self.map = {}
   for r=1,5 do
     self.map[r] = {}
     for c=1,(6-r) do
       self.map[r][c] = Tile()
+      self.map[r][c]:generate(self.ac, r)
     end
   end
   for c=1,5 do
@@ -210,7 +224,7 @@ function Map:draw()
       if self.map[r][c].v ~= -1 then
         shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v)
         if self.map[r][c].i == -1 then
-          self.map[r][c]:generate(r)
+          self.map[r][c]:generate(self.ac, r)
         end
         if self.map[r][c].v == 2 then
           love.graphics.print(self.map[r][c].i,Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2)+Tile.w*.3, Map.y+Tile.h*(6-r-1)+Tile.h*.43)
@@ -238,7 +252,13 @@ function Map:click(x,y)
       saves:clear()
     end
     world.switch:press(false)
-    world.battle = Battle(self.map[r][c].i, c, r)
+    if self.map[r][c].v == 2 then
+      world.battle = Battle(self.map[r][c], c, r)
+    else
+      local shadow = Tile()
+      shadow:generate(self.ac, r)
+      world.battle = Battle(shadow, c, r)
+    end
   end
 end
 
@@ -849,7 +869,7 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 4
+Saves.version = 5
 
 function Saves:get_time()
   return saves.add_time + (love.timer.getTime() - saves.start_time)
@@ -909,7 +929,18 @@ function Saves:save(ic)
   for r=1,5 do
     sv.map[r] = {}
     for c=1,(6-r) do
-      sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v}
+      local tdeck = {}
+      for k,cd in ipairs(world.map.map[r][c].deck) do
+        table.insert(tdeck,{num = cd.num, sym = cd.sym})
+      end
+      local tarmor = {
+        ar_c = world.map.map[r][c].armor.ar_c,
+        kinds = world.map.map[r][c].armor.kinds,
+        used_kinds = world.map.map[r][c].armor.used_kinds,
+        nk = world.map.map[r][c].armor.nk,
+        tk = world.map.map[r][c].armor.tk,
+      }
+      sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v, deck = tdeck, armor = tarmor }
     end
   end
   -- stats
@@ -967,6 +998,21 @@ function Saves:load(ic)
       local t = Tile()
       t.i = sv.map[r][c].i
       t.v = sv.map[r][c].v
+      local tdeck = {}
+      for k,cd in ipairs(sv.map[r][c].deck) do
+        local c = Card()
+        c.num = cd.num
+        c.sym = cd.sym
+        table.insert(tdeck,c)
+      end
+      t.deck = tdeck
+      local tarmor = Armor()
+      tarmor.ar_c = sv.map[r][c].armor.ar_c
+      tarmor.kinds = sv.map[r][c].armor.kinds
+      tarmor.used_kinds = sv.map[r][c].armor.used_kinds
+      tarmor.nk = sv.map[r][c].armor.nk
+      tarmor.tk = sv.map[r][c].armor.tk
+      t.armor = tarmor
       world.map.map[r][c] = t
     end
   end
@@ -1247,7 +1293,7 @@ function World:new()
   end
   self.hand = Hand()
   self.drop = Drop()
-  self.map = Map()
+  self.map = Map(self.progress.ac)
   self.save_options = SaveOptions()
 
   self.switch = SwitchBoard()
@@ -1370,9 +1416,9 @@ end
 
 Battle = Object:extend()
 
-function Battle:new(hp,c,r)
-  self.body = Body(hp)
-  self.armor = Armor(r)
+function Battle:new(tile,c,r)
+  self.body = Body(tile)
+  self.armor = tile.armor
   self.my = MyAttack()
   self.enem = false
   self.attack_pause = false
@@ -1381,6 +1427,7 @@ function Battle:new(hp,c,r)
   self.c = c
   self.r = r
 end
+
 function Battle:draw()
   self.body:draw()
   self.armor:draw()
@@ -1393,21 +1440,21 @@ end
 
 function Battle:attack()
   self.enem = EnemAttack()
-  for i=1,math.min(table.getn(self.my.deck),self.body.hp) do
-    if self.body.new_hp > 0 then
-      self.enem.deck[i] = Card()
-      self.body.new_hp = self.body.new_hp - 1
-    else
-      self.enem.deck[i] = table.remove(self.body.edeck)
-    end
+  table_shuf(self.body.deck)
+  for i=1,math.min(table.getn(self.my.deck), table.getn(self.body.deck)) do
+    self.enem.deck[i] = table.remove(self.body.deck)
   end
+
+  -- to be armor...
   self.my.a = self.my:count()
   self.enem.a = self.enem:count(self.armor.kinds)
+
   if self.my.a > self.enem.a then
     self.scale = 1
   elseif self.enem.a > self.my.a then
     self.scale = -1
   end
+
   self.attack_pause = true
 end
 
@@ -1417,42 +1464,57 @@ function Battle:damage()
       table.insert(world.hand.deck, cd:clean())
     end
   end
+
   if self.enem.a <= self.my.a then
-    self.body.hp = self.body.hp - table.getn(self.enem.deck)
+    self.body.stolen = self.body.stolen - table.getn(self.enem.deck)
+    if self.body.stolen < 0 then
+      self.body.stolen = 0
+    end
   else
     for k,cd in ipairs(self.my.deck) do
-      table.insert(self.body.edeck, cd:clean())
+      table.insert(self.body.deck, cd:clean())
     end
+
     for i=1,math.min(table.getn(self.my.deck), table.getn(world.drop.deck)) do
       table.insert(world.hand.deck, table.remove(world.drop.deck, 1))
     end
   end
+
+  self.body.hp = table.getn(self.body.deck)
+
   self.my = MyAttack()
   self.enem = nil
+
   if self.body.hp <= 0 then
     for i=1,math.min(world.stats.d.v - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
       table.insert(world.drop.deck, Card())
     end
+
     world.map:reveal(self.c,self.r)
     if self.r == 5 then
       world.progress.ac = world.progress.ac + 1
+
       if world.progress.ac < 5 then
-        world.map = Map()
+        world.map = Map(world.progress.ac)
       else
         saves:clear()
         leaderboards:add()
         world.switch:press("leaderboard")
       end
     end
+
     world.switch:press("drop")
     world.battle = nil
     world.progress.geno = world.progress.geno+1
+
     if world.progress.hardcore then
       saves:save(7)
     end
   end
+
   self.attack_pause = false
   self.scale = 0
+
   if table.getn(world.hand.deck) < 1 then
     self.death_pause = true
   end
@@ -1464,19 +1526,18 @@ Body.y = 70
 Body.w = Stat.w
 Body.h = Stat.h
 
-function Body:new(hp)
-  self.hp = hp
-  self.o_hp = hp
-  self.new_hp = hp
-  self.edeck = {}
-  self.edeck_l = 0
+function Body:new(tile)
+  self.hp = tile.i
+  self.o_hp = self.hp
+  self.stolen = 0
+  self.deck = tile.deck
   self.reset_button = false
 end
 
 function Body:draw()
   shapes.rectangle(self.x,self.y,self.w,self.h,9, self.reset_button)
   love.graphics.print(self.hp,self.x+(self.w/3),self.y+(self.h/5))
-  for i=1,table.getn(self.edeck) do
+  for i=1,self.stolen do
     shapes.rectangle(self.x,self.y-(self.h/8)*i,self.w,Card.h/8,5)
   end
 end
@@ -1508,8 +1569,11 @@ Armor.x = 50
 Armor.y = 40
 Armor.cd = 25
 
-function Armor:new(r)
-  self.ar_c = r + world.progress.ac*5 - 1
+function Armor:new(ac, r)
+  if ac == nil then
+    return
+  end
+  self.ar_c = r + ac*5 - 1
   self.kinds = {1,1,1,1}
   self.used_kinds = {0,0,0,0}
   self.nk = 0
@@ -1520,7 +1584,7 @@ function Armor:new(r)
     if r == 5 then
       v = math.max(v,love.math.random(2,13))
     end
-    if self.used_kinds[k] < world.progress.ac + 1 then
+    if self.used_kinds[k] < ac + 1 then
       if self.used_kinds[k] == 0 then
         self.tk = self.tk + 1
       end
