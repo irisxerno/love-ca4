@@ -195,6 +195,7 @@ function Tile:generate(ac, r)
     self.i = self.i + rolltile(math.min(5,r_ac))
     r_ac = r_ac - 5
   end
+
   self.deck_kinds = {0,0,0,0}
   for i=1,self.i do
     local myi = love.math.random(1,4)
@@ -242,9 +243,6 @@ function Map:draw()
           sss = true
         end
         shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v, sss)
-        if self.map[r][c].i == -1 then
-          self.map[r][c]:generate(self.ac, r)
-        end
         if self.map[r][c].v == 2 then
           love.graphics.print(self.map[r][c].i,Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2)+Tile.w*.3, Map.y+Tile.h*(6-r-1)+Tile.h*.43)
         end
@@ -543,7 +541,7 @@ function Stat:cost()
 end
 
 Stats = Object:extend()
-Stats.x = 500
+Stats.x = 620
 Stats.y = 40
 
 function Stats:new()
@@ -1068,6 +1066,7 @@ function Saves:load(ic)
     table.insert(world.drop.deck,c)
   end
   -- map
+  world.map.ac = sv.ac
   world.map.map = {}
   for r=1,5 do
     world.map.map[r] = {}
@@ -1772,7 +1771,7 @@ end
 
 function love.update(dt)
   world:update()
-  local x, y = love.mouse.getPosition()
+  -- require("lovebird").update()
 end
 
 function love.keypressed(k)
