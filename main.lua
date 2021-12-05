@@ -94,20 +94,24 @@ end
 
 -- shapes
 shapes = {}
-function shapes.triangle(x,y,w,h,ss)
+function shapes.triangle(x,y,w,h,ss, sss)
   if ss == -1 then
     do return end
   end
   local p1 = { x,y+h, x+w,y+h, x+w/2,y }
   local p2 = { x+8,y+h-4, x+w-8,y+h-4, x+w/2,y+8 }
-    color:set(7,0.5)
-    love.graphics.polygon("fill",p1)
+  color:set(7,0.5)
+  love.graphics.polygon("fill",p1)
   if ss == 2 then
     color:set(1)
     love.graphics.polygon("line",p2)
   elseif ss == 1 then
     color:set(1,0.5)
     love.graphics.polygon("line",p2)
+  end
+  if sss then
+    color:set(1,0.9)
+    love.graphics.polygon("line",p1)
   end
 end
 
@@ -218,11 +222,12 @@ function Map:new(ac)
   for r=1,5 do
     self.map[r] = {}
     for c=1,(6-r) do
-      self.map[r][c] = Tile()
-      self.map[r][c]:generate(self.ac, r)
+      self.map[r][c] = { v = 0 }
     end
   end
   for c=1,5 do
+    self.map[1][c] = Tile()
+    self.map[1][c]:generate(self.ac, 1)
     self.map[1][c].v = 2
   end
   self.curr_layer = 1
@@ -232,7 +237,11 @@ function Map:draw()
   for r=1,5 do
     for c=1,(6-r) do
       if self.map[r][c].v ~= -1 then
-        shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v)
+        local sss = nil
+        if self.sel and (self.sel[1] == c and self.sel[2] == r) then
+          sss = true
+        end
+        shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v, sss)
         if self.map[r][c].i == -1 then
           self.map[r][c]:generate(self.ac, r)
         end
@@ -240,6 +249,49 @@ function Map:draw()
           love.graphics.print(self.map[r][c].i,Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2)+Tile.w*.3, Map.y+Tile.h*(6-r-1)+Tile.h*.43)
         end
       end
+    end
+  end
+  if self.peek then
+    local c_d = Tile.w/6
+    local tt = c_d*2
+    local line = 1
+    local column = 0
+    local opc = 0.75
+
+    local start_x = Map.x+Tile.w*(self.sel[1]-1)+(Tile.w*(self.sel[2]-1)/2) + Tile.w - Tile.w/4
+    local start_y = Map.y+Tile.h*(6-self.sel[2]-1) - Tile.h/4
+    if start_y < tt/2 then
+      start_y = tt/2
+    end
+
+    color:set(7,opc)
+    love.graphics.rectangle("fill", start_x, start_y+tt*(line-1), tt*8, tt*1)
+    for i,v in ipairs(self.peek.armor) do
+      column = column + 1
+      if column > 8 then
+        column = 1
+        line = line + 1
+        color:set(7,opc)
+        love.graphics.rectangle("fill", start_x, start_y+tt*(line-1), tt*8, tt*1)
+      end
+      shapes.circle(start_x+c_d+tt*(column-1), start_y+c_d+(line-1)*tt, c_d,a.symc[v])
+    end
+    if column ~= 0 and (#self.peek.armor + #self.peek.deck > 8) then
+      column = 0
+      line = line + 1
+      color:set(7,opc)
+      love.graphics.rectangle("fill", start_x, start_y+tt*(line-1), tt*8, tt*1)
+    end
+    --]]
+    for i,v in ipairs(self.peek.deck) do
+      column = column + 1
+      if column > 8 then
+        column = 1
+        line = line + 1
+        color:set(7,opc)
+        love.graphics.rectangle("fill", start_x, start_y+tt*(line-1), tt*8, tt*1)
+      end
+      shapes.rectangle(start_x+tt*(column-1), start_y+(line-1)*tt, tt, tt, a.symc[v])
     end
   end
 end
@@ -254,21 +306,42 @@ function Map:getelem(x,y)
 end
 
 function Map:click(x,y)
-  local c,r = self:getelem(x,y)
+  self.peek = nil
+  local c, r = self:getelem(x,y)
   if c and self.map[r][c].v > 0 then
-    if not world.progress.hardcore then
-      saves:save(0)
+    if self.sel and (self.sel[1] == c and self.sel[2] == r) then
+      if not world.progress.hardcore then
+        saves:save(0)
+      else
+        saves:clear()
+      end
+      world.switch:press(false)
+      if self.map[r][c].v == 2 then
+        world.battle = Battle(self.map[r][c], c, r)
+      else
+        local shadow = Tile()
+        shadow:generate(self.ac, r)
+        world.battle = Battle(shadow, c, r)
+      end
     else
-      saves:clear()
+      self.sel = {c, r}
+      if self.map[r][c].v == 2 then
+        local e = self.map[r][c]
+        local armor_kind = {}
+        local deck_kind = {}
+        for k=1,4 do
+          for i=1,e.armor_kinds[k] do
+            table.insert(armor_kind, k)
+          end
+          for i=1,e.deck_kinds[k] do
+            table.insert(deck_kind, k)
+          end
+        end
+        self.peek = { armor = armor_kind ,deck = deck_kind }
+      end
     end
-    world.switch:press(false)
-    if self.map[r][c].v == 2 then
-      world.battle = Battle(self.map[r][c], c, r)
-    else
-      local shadow = Tile()
-      shadow:generate(self.ac, r)
-      world.battle = Battle(shadow, c, r)
-    end
+  else
+    self.sel = nil
   end
 end
 
@@ -279,6 +352,11 @@ function Map:reveal(c,r)
       local nr = ir +r
       if ir ~= ic and nr > 0 and nr < 6 and self.map[nr][nc] and self.map[nr][nc].v ~= -1 and self.map[nr][nc].v < 2 then
         self.map[nr][nc].v = self.map[nr][nc].v + 1
+        if self.map[nr][nc].v == 2 then
+          self.map[nr][nc] = Tile()
+          self.map[nr][nc]:generate(self.ac, r)
+          self.map[nr][nc].v = 2
+        end
       end
     end
   end
@@ -994,12 +1072,16 @@ function Saves:load(ic)
   for r=1,5 do
     world.map.map[r] = {}
     for c=1,(6-r) do
-      local t = Tile()
-      t.i = sv.map[r][c].i
-      t.v = sv.map[r][c].v
-      t.deck_kinds = sv.map[r][c].deck_kinds
-      t.armor_kinds = sv.map[r][c].armor_kinds
-      world.map.map[r][c] = t
+      if sv.map[r][c].i then
+        local t = Tile()
+        t.i = sv.map[r][c].i
+        t.v = sv.map[r][c].v
+        t.deck_kinds = sv.map[r][c].deck_kinds
+        t.armor_kinds = sv.map[r][c].armor_kinds
+        world.map.map[r][c] = t
+      else
+        world.map.map[r][c] = { v = sv.map[r][c].v }
+      end
     end
   end
 end
@@ -1294,19 +1376,21 @@ end
 function World:draw()
   love.graphics.setLineWidth(2)
   color:set(8,true)
+
+  if self.switch.leaderboard.state then
+    self.leaderboard_show:draw()
+  end
+
   self.hand:draw()
+
   if self.switch.drop.state then
     self.drop:draw()
-  elseif self.switch.map.state and world.map then
-    self.map:draw()
-  elseif self.switch.save.state then
-    self.save_options:draw()
-  elseif self.switch.leaderboard.state then
-    self.leaderboard_show:draw()
-
   end
-  -- color:set(15)
-  -- love.graphics.print(world.progress.i, 650,350)
+
+  self.held_cards:draw()
+  self.held_xp:draw()
+  self.held_save:draw()
+
   if not world.battle then
     self.stats:draw()
     self.xp:draw()
@@ -1314,9 +1398,14 @@ function World:draw()
   else
     self.battle:draw()
   end
-  self.held_cards:draw()
-  self.held_xp:draw()
-  self.held_save:draw()
+
+  if self.switch.map.state and world.map then
+    self.map:draw()
+  end
+
+  if self.switch.save.state then
+    self.save_options:draw()
+  end
 end
 
 function World:update()
@@ -1459,7 +1548,7 @@ function Battle:damage()
   else
     for k,cd in ipairs(self.my.deck) do
       table.insert(self.body.deck, cd:clean())
-      self.stolen = self.stolen + 1
+      self.body.stolen = self.body.   stolen + 1
     end
 
     for i=1,math.min(table.getn(self.my.deck), table.getn(world.drop.deck)) do
@@ -1696,5 +1785,6 @@ function love.keypressed(k)
 end
 
 function love.quit()
+  saves:save(0)
   saves:file()
 end
