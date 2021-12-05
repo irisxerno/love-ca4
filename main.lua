@@ -1160,6 +1160,9 @@ function SaveSlots:draw()
     shapes.rectangle(self.x+self.w*i,self.y,self.w,self.h,c,self.g == i)
     if saves.data[i] then
       love.graphics.print(saves.data[i].i,self.x+self.w*i+(Stat.w/8),self.y+(Stat.h/6))
+      love.graphics.setFont(font_small)
+      love.graphics.print(string.format("+%s", #saves.data[i].drop),self.x+self.w*i+(Stat.w/4),self.y+(Stat.h/2))
+      love.graphics.setFont(font)
       for j=1,saves.data[i].ac do
         shapes.rectangle(self.x+self.w*i,self.y-(Stat.h/8)*j,SaveSlots.w,Card.h/8,5)
       end
@@ -1167,6 +1170,7 @@ function SaveSlots:draw()
       love.graphics.rectangle("line", self.x+self.w*i+6,self.y+6,self.w-12,self.h-12)
     end
   end
+
 end
 
 function SaveSlots:update(x,y)
