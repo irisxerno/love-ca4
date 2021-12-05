@@ -1,3 +1,5 @@
+debugmode = false
+
 function table_shuf(t)
   for i = #t, 2, -1 do
     local j = love.math.random(i)
@@ -29,6 +31,22 @@ function RGB(r,g,b)
     r,g,b = unpack(r)
   end
   return r/255,g/255,b/255
+end
+
+-- Converts HSL to RGB. (input and output range: 0 - 255)
+function HSL(h, s, l, a)
+	if s<=0 then return l,l,l,a end
+	h, s, l = h*6, s, l
+	local c = (1-math.abs(2*l-1))*s
+	local x = (1-math.abs(h%2-1))*c
+	local m,r,g,b = (l-.5*c), 0,0,0
+	if h < 1     then r,g,b = c,x,0
+	elseif h < 2 then r,g,b = x,c,0
+	elseif h < 3 then r,g,b = 0,c,x
+	elseif h < 4 then r,g,b = 0,x,c
+	elseif h < 5 then r,g,b = x,0,c
+	else              r,g,b = c,0,x
+	end return (r+m),(g+m),(b+m),a
 end
 
 function clamp(i,min,max)
@@ -84,11 +102,9 @@ end
 debug = {string = "",show = true}
 function debug:set(s)
   debug.string = inspect(s).."\n"
-  print(inspect(s))
 end
 function debug:add(s)
   debug.string = debug.string .. inspect(s) .. "\n"
-  print(inspect(s))
 end
 
 
@@ -541,7 +557,7 @@ function Stat:cost()
 end
 
 Stats = Object:extend()
-Stats.x = 620
+Stats.x = 612
 Stats.y = 40
 
 function Stats:new()
@@ -842,7 +858,12 @@ function SwitchBoard:click(x,y)
 end
 
 Leaderboards = Object:extend()
-Leaderboards.version = 0
+Leaderboards.version = 1
+Leaderboards.filename = "leaderboards"
+
+if debugmode then
+  Leaderboards.filename = "leaderboards_debug"
+end
 
 function Leaderboards:new()
   self.data = {
@@ -857,9 +878,9 @@ function Leaderboards:new()
       geno = {}
     }
   }
-  local info = love.filesystem.getInfo("leaderboards")
+  local info = love.filesystem.getInfo(self.filename)
   if info then
-    local contents = love.filesystem.read("leaderboards")
+    local contents = love.filesystem.read(self.filename)
     local d = binser.deserializeN(contents)
     if d and d.version == self.version then
       self.data = d
@@ -868,8 +889,8 @@ function Leaderboards:new()
       if not v then
         v = "unknown"
       end
-      love.filesystem.write("leaderboards.old-"..v,contents)
-      love.filesystem.remove("leaderboards")
+      love.filesystem.write(self.filename..".old-"..v,contents)
+      love.filesystem.remove(self.filename)
     end
   end
 end
@@ -910,7 +931,7 @@ end
 
 function Leaderboards:file()
   self.data.version = self.version
-  love.filesystem.write("leaderboards",binser.serialize(self.data))
+  love.filesystem.write(self.filename,binser.serialize(self.data))
 end
 
 LeaderboardShow = Object:extend()
@@ -933,7 +954,8 @@ function LeaderboardShow:draw()
     vv1 = desc[i1]
     love.graphics.print(vv1, self.x, self.y-self.t2+self.h*(i1-1))
     for i2,v in ipairs(leaderboards.data.normal[v1]) do
-      love.graphics.setColor(RGB(v.id))
+      local r, g, b = v.id
+      love.graphics.setColor(r, g, b)
       love.graphics.print(string.format("け %d.\t殺 %d%%\t亡 %d*\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), v.deaths, pretty_time(v.time)), self.x, self.y+self.t*(i2-1)+self.h*(i1-1))
     end
     color:set(1)
@@ -943,7 +965,8 @@ function LeaderboardShow:draw()
     vv1 = desc[i1]
     love.graphics.print(vv1, self.x+self.w, self.y-self.t2+self.h*(i1-1))
     for i2,v in ipairs(leaderboards.data.hardcore[v1]) do
-      love.graphics.setColor(RGB(v.id))
+      local r, g, b = v.id
+      love.graphics.setColor(r, g, b)
       love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h*(i1-1))
     end
     color:set(1)
@@ -955,7 +978,12 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 6
+Saves.version = 7
+Saves.filename = "save"
+
+if debugmode then
+  Saves.filename = "save_debug"
+end
 
 function Saves:get_time()
   return saves.add_time + (love.timer.getTime() - saves.start_time)
@@ -967,9 +995,9 @@ function Saves:new()
   self.start_time = nil
   self.add_time = 0
   self.start_time = love.timer.getTime()
-  local info = love.filesystem.getInfo("save")
+  local info = love.filesystem.getInfo(self.filename)
   if info then
-    local contents = love.filesystem.read("save")
+    local contents = love.filesystem.read(self.filename)
     local d = binser.deserializeN(contents)
     if d and d.version == self.version then
       self.data = d
@@ -980,8 +1008,8 @@ function Saves:new()
       if not v then
         v = "unknown"
       end
-      love.filesystem.write("save.old-"..v,contents)
-      love.filesystem.remove("save")
+      love.filesystem.write(self.filename..".old-"..v,contents)
+      love.filesystem.remove(self.filename)
     end
   end
 end
@@ -1097,16 +1125,7 @@ function Saves:file()
   self.data.version = self.version
   self.data.deaths = self.deaths
   self.data.add_time = self:get_time()
-  love.filesystem.write("save",binser.serialize(self.data))
-end
-
-function Saves:findid(id)
-  for i=0,SaveSlots.c do
-    if self.data[i] and self.data[i].id == id then
-      return i
-    end
-  end
-  return false
+  love.filesystem.write(self.filename,binser.serialize(self.data))
 end
 
 SaveOptions = Object:extend()
@@ -1165,7 +1184,8 @@ function SaveSlots:draw()
       for j=1,saves.data[i].ac do
         shapes.rectangle(self.x+self.w*i,self.y-(Stat.h/8)*j,SaveSlots.w,Card.h/8,5)
       end
-      love.graphics.setColor(RGB(saves.data[i].id))
+      local r, g, b = saves.data[i].id
+      love.graphics.setColor(r, g, b)
       love.graphics.rectangle("line", self.x+self.w*i+6,self.y+6,self.w-12,self.h-12)
     end
   end
@@ -1210,7 +1230,8 @@ function CurrentGame:draw()
   end
   shapes.rectangle(self.x,self.y,self.w,self.h,c,self.focus)
   love.graphics.print("~~~~~~~~~~~~",self.x+(SaveSlots.w/2),self.y+(self.h/4))
-  love.graphics.setColor(RGB(world.id))
+  local r, g, b = world.id
+  love.graphics.setColor(r, g, b)
   love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
 end
 
@@ -1243,8 +1264,11 @@ function HardcoreGame:draw()
   shapes.rectangle(self.x,self.y,self.w,self.h,8,self.focus)
   love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
   if world.progress.hardcore then
-    love.graphics.setColor(RGB(world.id))
-    love.graphics.print(saves.data[7].i,self.x+(Stat.w/8),self.y+(Stat.h/6))
+    local r, g, b = world.id
+    love.graphics.setColor(r, g, b)
+    if saves.data[7] then
+      love.graphics.print(saves.data[7].i,self.x+(Stat.w/8),self.y+(Stat.h/6))
+    end
     love.graphics.rectangle("line", self.x+6,self.y+6,self.w-12,self.h-12)
   end
 end
@@ -1308,10 +1332,12 @@ function HeldSave:draw()
     shapes.circle(x,y,20,c)
     if self.source > -1 and saves.data[self.source] then
       local c = saves.data[self.source].id
-      love.graphics.setColor(RGB(c))
+      local r, g, b = c
+      love.graphics.setColor(r, g, b)
       love.graphics.circle("line",x,y,20-6)
     elseif self.source == -1 then
-      love.graphics.setColor(RGB(world.id))
+      local r, g, b = world.id
+      love.graphics.setColor(r, g, b)
       love.graphics.circle("line",x,y,20-6)
     end
     -- love.graphics.circle("line",x,y,20-6)
@@ -1356,12 +1382,11 @@ function World:new()
   self.leaderboard_show = LeaderboardShow()
   self.touch = Touch()
   self.progress = { ac = 0, i = 0, hardcore = false, geno = 0 }
-  while not self.id do
-    local id = {love.math.random(0,255),love.math.random(0,255),love.math.random(0,255)}
-    if not saves:findid(id) then
-      self.id = id
-    end
+  if debugmode then
+    self.progress.ac = 4
   end
+  local r, g, b = HSL(love.math.random(), 0.5 + love.math.random()/2, 0.5)
+  self.id = {r, g , b}
   self.hand = Hand()
   self.drop = Drop()
   self.map = Map(self.progress.ac)
@@ -1564,23 +1589,12 @@ function Battle:damage()
   self.my = MyAttack()
   self.enem = nil
 
-  if self.body.hp <= 0 then
+  if self.body.hp <= 0 or debugmode then
     for i=1,math.min(world.stats.d.v - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
       table.insert(world.drop.deck, Card())
     end
 
     world.map:reveal(self.c,self.r)
-    if self.r == 5 then
-      world.progress.ac = world.progress.ac + 1
-
-      if world.progress.ac < 5 then
-        world.map = Map(world.progress.ac)
-      else
-        saves:clear()
-        leaderboards:add()
-        world.switch:press("leaderboard")
-      end
-    end
 
     world.switch:press("drop")
     world.battle = nil
@@ -1588,6 +1602,19 @@ function Battle:damage()
 
     if world.progress.hardcore then
       saves:save(7)
+    end
+
+    if self.r == 5 then
+      world.progress.ac = world.progress.ac + 1
+
+      if world.progress.ac < 5 then
+        world.map = Map(world.progress.ac)
+      else
+        world.map = nil
+        leaderboards:add()
+        world.switch:press("leaderboard")
+        saves:clear()
+      end
     end
   end
 
@@ -1749,7 +1776,6 @@ function love.load()
 end
 
 function love.draw()
-  love.graphics.scale(global_scale)
   world:draw()
   if debug.show then
     color:set(1)
@@ -1775,11 +1801,7 @@ function love.update(dt)
 end
 
 function love.keypressed(k)
-  if k == "e" then
-    world = World()
-    debug.string = ""
-  end
-  if k == "d" then
+  if debugmode and k == "d" then
     table.insert(world.drop.deck,Card())
   end
   if k == "y" then
