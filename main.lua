@@ -20,6 +20,21 @@ function table_take(t,m)
   return newt
 end
 
+function sortbyprops(p, n)
+  return function (t1, t2)
+    for i,v in ipairs(p) do
+      if t1[v] ~= t2[v] then
+        if n and n[i] then
+          return t1[v] > t2[v]
+        else
+          return t1[v] < t2[v]
+        end
+      end
+    end
+    return false
+  end
+end
+
 function pretty_time(t)
   sec = t % 60
   min = math.floor(t/60)
@@ -70,7 +85,7 @@ love.graphics.setFont(font)
 
 -- "assets"
 a = {}
-a.maxgeno = 75
+a.maxgeno = 100
 a.sym = {"β","δ","λ","φ"}
 a.symc = {9,10,12,13}
 a.num = {"1","2","3","4","5","6","7","8","9","x","J","Q","K"}
@@ -238,6 +253,7 @@ Map.x = 60
 Map.y = 0
 
 function Map:new(ac)
+  self.geno = 0
   self.ac = ac
   self.map = {}
   for r=1,5 do
@@ -918,7 +934,7 @@ function SwitchBoard:click(x,y)
 end
 
 Leaderboards = Object:extend()
-Leaderboards.version = 1
+Leaderboards.version = 2
 Leaderboards.filename = "leaderboards"
 
 if debugmode then
@@ -960,7 +976,7 @@ function Leaderboards:add()
     date = os.date("%F %T"),
     id = world.id,
     i = world.progress.i,
-    time = math.floor(saves:get_time()),
+    time = saves:get_time(),
     geno = world.progress.geno
   }
   if not world.progress.hardcore then
@@ -973,17 +989,13 @@ function Leaderboards:add()
     slot = self.data.normal
   end
   table.insert(slot.quick,entry)
-  table.sort(slot.quick, function (k1, k2) return k1.time < k2.time end)
+  table.sort(slot.quick, sortbyprops({"time", "i", "geno"}, {false, false, false}))
   slot.quick = table_take(slot.quick, 5)
   table.insert(slot.low,entry)
-  table.sort(slot.low, function (k1, k2)
-    if k1.i == k2.i then return k1.time < k2.time end
-    return k1.i < k2.i end)
+  table.sort(slot.low, sortbyprops({"i", "geno", "time"}, {false, false, false}))
   slot.low = table_take(slot.low, 5)
   table.insert(slot.geno,entry)
-  table.sort(slot.geno, function (k1, k2)
-    if k1.geno == k2.geno then return k1.time < k2.time end
-    return k1.geno > k2.geno end)
+  table.sort(slot.geno, sortbyprops({"geno", "time", "i"}, {true, false, true}))
   slot.geno = table_take(slot.geno, 5)
 
   self:file()
@@ -1001,7 +1013,6 @@ LeaderboardShow.w = 230
 LeaderboardShow.h = 90
 LeaderboardShow.t = 12
 LeaderboardShow.t2 = 15
-
 
 function LeaderboardShow:draw()
   color:set(1)
@@ -1038,7 +1049,7 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 9
+Saves.version = 10
 Saves.filename = "save"
 
 if debugmode then
@@ -1110,6 +1121,8 @@ function Saves:save(ic)
       sv.map[r][c] = {i = world.map.map[r][c].i, v = world.map.map[r][c].v, deck_kinds = world.map.map[r][c].deck_kinds, armor_kinds = world.map.map[r][c].armor_kinds }
     end
   end
+  sv.mapgeno = world.map.geno
+
   -- stats
   sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, ca = world.stats.ca.v, }
   -- xp
@@ -1185,6 +1198,7 @@ function Saves:load(ic)
         world.map.map[r][c] = { v = sv.map[r][c].v }
       end
     end
+  world.map.geno = sv.mapgeno
   end
 end
 
@@ -1688,6 +1702,7 @@ function Battle:damage()
     end
 
     world.map:reveal(self.c,self.r)
+    world.map.geno = world.map.geno+1
 
     world.switch:press("drop")
     world.battle = nil
@@ -1698,6 +1713,9 @@ function Battle:damage()
     end
 
     if self.r == 5 then
+      if world.map.geno > 15 then
+        world.progress.geno = world.progress.geno+5
+      end
       world.progress.ac = world.progress.ac + 1
 
       if world.progress.ac < 5 then
