@@ -1,4 +1,4 @@
-debugmode = true
+debugmode = false
 
 function table_shuf(t)
   for i = #t, 2, -1 do
@@ -1191,10 +1191,17 @@ end
 function Saves:clear()
   self.data = {}
   self.deaths = 0
-  self.start_time = love.timer.getTime()
-  self.add_time = 0
+--  self.start_time = love.timer.getTime()
+--  self.add_time = 0
   self:file()
 end
+
+function Saves:fullclear()
+  self:clear()
+  self.start_time = love.timer.getTime()
+  self.add_time = 0
+end
+
 
 function Saves:file()
   self.data.version = self.version
@@ -1422,14 +1429,14 @@ function HeldSave:drop(x,y)
   if self.t then
     -- do things like save
     if self.source == -2 and world.save_options.current.focus then
-      saves:clear()
+      saves:fullclear()
       world = World()
       world.switch:press("save")
     elseif self.source == -2 and world.save_options.slots.g then
       saves:delete(world.save_options.slots.g)
       saves:file()
     elseif self.source == -2 and world.save_options.hardcore.focus then
-      saves:clear()
+      saves:fullclear()
       world = World()
       world.progress.hardcore = true
       world.switch:press("save")
@@ -1546,7 +1553,7 @@ function Touch:pressed(x,y)
       saves:file()
       world.switch:press("map")
     else
-      saves:clear()
+      saves:fullclear()
     end
     self.state = nil
   else
@@ -1699,7 +1706,7 @@ function Battle:damage()
         world.map = nil
         leaderboards:add()
         world.switch:press("leaderboard")
-        saves:clear()
+        saves:fullclear()
       end
     end
   end
@@ -1757,7 +1764,7 @@ function Body:click(x,y)
         saves:file()
         world.switch:press("map")
       else
-        saves:clear()
+        saves:fullclear()
       end
     end
   elseif self.reset_button then
