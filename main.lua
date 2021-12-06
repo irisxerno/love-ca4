@@ -343,7 +343,7 @@ function Map:click(x,y)
   self.peek = nil
   local c, r = self:getelem(x,y)
   if c and self.map[r][c].v > 0 then
-    if self.sel and (self.sel[1] == c and self.sel[2] == r) then
+    if self.sel and (self.sel[1] == c and self.sel[2] == r) and table.getn(world.hand.deck) > 0 then
       if not world.progress.hardcore then
         saves:save(0)
       else
@@ -1453,6 +1453,7 @@ function HeldSave:drop(x,y)
       saves:fullclear()
       world = World()
       world.progress.hardcore = true
+      world.stats.d.v = 10
       world.switch:press("save")
       saves:save(7)
     elseif self.source == -1 and world.save_options.slots.g then
