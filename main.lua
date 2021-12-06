@@ -525,6 +525,15 @@ function Drop:draw()
   -- shapes.rectangle(self.x+Card.w*table.getn(self.deck),self.y-Card.h/4,Card.w*world.stats.d.v,Card.h/4,16)
 end
 
+CustomArmor = Object:extend()
+CustomArmor.x = 75
+CustomArmor.y = 175
+CustomArmor.d = 64
+
+function CustomArmor:draw()
+  shapes.circle(CustomArmor.x,CustomArmor.y,CustomArmor.d,6)
+end
+
 --
 -- Stats
 --
