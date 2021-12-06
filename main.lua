@@ -1,4 +1,4 @@
-debugmode = false
+debugmode = true
 
 function table_shuf(t)
   for i = #t, 2, -1 do
@@ -145,11 +145,15 @@ function shapes.rectangle(x,y,w,h,c,ss)
   love.graphics.rectangle("line", x+4,y+4,w-8,h-8)
 end
 
-function shapes.circle(x,y,d,c)
+function shapes.circle(x,y,d,c, sss)
   color:set(7,0.5)
   love.graphics.circle("fill",x,y,d)
   color:set(c)
   love.graphics.circle("line",x,y,d-4)
+  if sss then
+    color:set(1,0.9)
+      love.graphics.circle("line",x,y,d)
+  end
 end
 
 function getelem_rectangle(self,x,y)
@@ -444,7 +448,9 @@ function Deck:click(x,y,cx,cy)
   e2 = self:getelem(cx,cy)
   if e1 and e2 and e1 == e2 then
     self:sel(e1)
+    return true
   end
+  return false
 end
 
 function Deck:collect()
@@ -516,7 +522,7 @@ end
 
 Drop = Deck:extend()
 Drop.x = 50
-Drop.y = 50
+Drop.y = 110
 Drop.source = "drop"
 
 function Drop:draw()
@@ -526,12 +532,48 @@ function Drop:draw()
 end
 
 CustomArmor = Object:extend()
-CustomArmor.x = 75
-CustomArmor.y = 175
-CustomArmor.d = 64
+CustomArmor.x = 50
+CustomArmor.y = 25
+CustomArmor.w = 50
+CustomArmor.h = 50
+CustomArmor.d = 25
+
+function CustomArmor:new()
+  self.sel = nil
+  self.slots = {}
+end
 
 function CustomArmor:draw()
-  shapes.circle(CustomArmor.x,CustomArmor.y,CustomArmor.d,6)
+  -- shapes.rectangle(self.x, self.y, self.w, self.h, 1)
+  local armorslots = world.stats.ca.v
+  for i=1,armorslots do
+    local clr = 6
+    if self.slots[i] then
+      clr = a.symc[self.slots[i].sym]
+    end
+    shapes.circle(self.x + self.d + self.d*2*(i-1),self.y + self.d,self.d, clr, self.sel == i)
+    color:set(clr)
+    if self.slots[i] then
+      love.graphics.print(self.slots[i].num, self.x + self.d/2 + self.d*2*(i-1), self.y + self.d/2)
+    end
+  end
+end
+
+function CustomArmor:getelem(x,y)
+  local lx = (x-self.x)/self.w+1
+  local ly = (y-self.y)/self.h
+  if ly>=0 and ly<=1 and ((lx>=1 and lx<world.stats.ca.v+1) or nx) then
+    return clamp(math.floor(lx),1,world.stats.ca.v+1)
+  end
+  return nil
+end
+
+function CustomArmor:update(x,y)
+  self.sel = nil
+  local s = self:getelem(x,y)
+  if s and world.held_cards.deck and #world.held_cards.deck == 1 then
+    self.sel = s
+  end
 end
 
 --
@@ -555,25 +597,31 @@ function Stat:draw(x,y)
   end
 end
 
-function Stat:new(init, cost_mult)
+function Stat:new(init, cost_mult, v_cost)
   self.v = init
   self.cost_mult = cost_mult
+  if v_cost then
+    self.v_cost = v_cost
+  else
+    self.v_cost = 0
+  end
   self.focus = false
 end
 
 function Stat:cost()
-  return self.cost_mult*self.v
+  return self.cost_mult*(self.v+self.v_cost)
 end
 
 Stats = Object:extend()
 Stats.x = 612
-Stats.y = 40
+Stats.y = 50
 
 function Stats:new()
   self.d = Stat(5,1)
   self.hs = Stat(5,1)
   self.ma = Stat(5,5)
-  self.table = {self.ma, self.d, self.hs}
+  self.ca = Stat(0,5,5)
+  self.table = {self.ca, self.ma, self.d, self.hs}
 end
 
 function Stats:draw()
@@ -585,7 +633,7 @@ end
 function Stats:getelem(x,y)
   lx = (x-self.x)/Stat.w
   ly = (y-self.y)/Stat.h+1
-  if lx > 0 and lx < 1 and ly > 1 and ly < 4 then
+  if lx > 0 and lx < 1 and ly > 1 and ly < #self.table+1 then
     return math.floor(ly)
   end
   return nil
@@ -613,7 +661,7 @@ end
 
 XP = Object:extend()
 XP.x = Stats.x
-XP.y = Stats.y+Stat.h*3
+XP.y = Stats.y+Stat.h*4
 XP.w = Stat.w
 XP.h = Stat.h
 
@@ -719,7 +767,8 @@ function HeldCards:drop()
         table.insert(world.drop.deck, world.drop.g, cd:clean())
         world.drop.g = world.drop.g + 1
       end
-
+    elseif world.customarmor.sel and #self.deck == 1 then
+      world.customarmor.slots[world.customarmor.sel] = self.deck[1]
     elseif world.battle and world.battle.my.g and world.stats.ma.v >= (table.getn(self.deck)) then
       for k,cd in ipairs(self.deck) do
         table.insert(world.battle.my.deck, world.battle.my.g, cd:clean())
@@ -794,7 +843,6 @@ end
 
 Switch.getelem = getelem_rectangle
 
-
 LeaderboardSwitch = Switch:extend()
 LeaderboardSwitch.x = Stats.x-Stat.w
 LeaderboardSwitch.y = Stats.y
@@ -848,6 +896,9 @@ function SwitchBoard:press(name)
   local ps = false
   if name then
     ps = self[name].state
+  end
+  if name ~= false and self[name].state == true then
+    return
   end
   for i,n in ipairs(self.list) do
     self[n].state = false
@@ -987,7 +1038,7 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 7
+Saves.version = 9
 Saves.filename = "save"
 
 if debugmode then
@@ -1001,7 +1052,6 @@ end
 function Saves:new()
   self.data = {}
   self.deaths = 0
-  self.start_time = nil
   self.add_time = 0
   self.start_time = love.timer.getTime()
   local info = love.filesystem.getInfo(self.filename)
@@ -1047,6 +1097,11 @@ function Saves:save(ic)
   for k,cd in ipairs(world.drop.deck) do
     table.insert(sv.drop,{num = cd.num, sym = cd.sym})
   end
+  -- customarmor
+  sv.customarmor = {}
+  for k,cd in ipairs(world.customarmor.slots) do
+    table.insert(sv.customarmor,{num = cd.num, sym = cd.sym})
+  end
   -- map
   sv.map = {}
   for r=1,5 do
@@ -1056,7 +1111,7 @@ function Saves:save(ic)
     end
   end
   -- stats
-  sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, }
+  sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, ca = world.stats.ca.v, }
   -- xp
   sv.xp = world.xp.v
   sv.ac = world.progress.ac
@@ -1080,7 +1135,10 @@ function Saves:load(ic)
   world.stats.d.v = sv.stats.d
   world.stats.hs.v = sv.stats.hs
   world.stats.ma.v = sv.stats.ma
-  sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, }
+  world.stats.ca.v = sv.stats.ca
+
+  -- sv.stats = { d = world.stats.d.v, hs = world.stats.hs.v, ma = world.stats.ma.v, }
+
   -- xp
   world.xp.v = sv.xp
   world.progress.ac = sv.ac
@@ -1101,6 +1159,14 @@ function Saves:load(ic)
     c.num = cd.num
     c.sym = cd.sym
     table.insert(world.drop.deck,c)
+  end
+  -- customarmor
+  world.customarmor.slots = {}
+  for k,cd in ipairs(sv.customarmor) do
+    local c = Card()
+    c.num = cd.num
+    c.sym = cd.sym
+    table.insert(world.customarmor.slots,c)
   end
   -- map
   world.map.ac = sv.ac
@@ -1397,6 +1463,7 @@ function World:new()
   self.id = {r, g , b}
   self.hand = Hand()
   self.drop = Drop()
+  self.customarmor = CustomArmor()
   self.map = Map(self.progress.ac)
   self.save_options = SaveOptions()
 
@@ -1417,15 +1484,6 @@ function World:draw()
     self.leaderboard_show:draw()
   end
 
-  self.hand:draw()
-
-  if self.switch.drop.state then
-    self.drop:draw()
-  end
-
-  self.held_cards:draw()
-  self.held_xp:draw()
-  self.held_save:draw()
 
   if not world.battle then
     self.stats:draw()
@@ -1434,6 +1492,18 @@ function World:draw()
   else
     self.battle:draw()
   end
+
+  self.hand:draw()
+
+  if self.switch.drop.state then
+    self.customarmor:draw()
+    self.drop:draw()
+  end
+
+  self.held_cards:draw()
+  self.held_xp:draw()
+  self.held_save:draw()
+
 
   if self.switch.map.state and world.map then
     self.map:draw()
@@ -1450,8 +1520,10 @@ function World:update()
   world.touch:update(x,y)
   world.held_cards:update(x,y)
   world.xp:update(x,y)
+  world.customarmor:update(x,y)
   world.stats:update(x,y)
   world.save_options:update(x,y)
+
 end
 
 Touch = Object:extend()
@@ -1484,15 +1556,20 @@ end
 
 function Touch:released(x,y)
   if self.state == "touch" then
-    if not world.battle then
+    local touched = false
+    if world.hand:click(x,y,self.x,self.y) then
+      touched = true
+    end
+    if world.switch.drop.state then
+      if world.drop:click(x,y,self.x,self.y) then
+        touched = true
+      end
+    end
+    if not world.battle and not touched then
       world.switch:click(x,y)
     end
     if world.switch.map.state and world.map then
       world.map:click(x,y)
-    end
-    world.hand:click(x,y,self.x,self.y)
-    if world.switch.drop.state then
-      world.drop:click(x,y,self.x,self.y)
     end
 
   elseif self.state == "drag" then
@@ -1530,6 +1607,7 @@ Battle = Object:extend()
 function Battle:new(tile,c,r)
   self.body = Body(tile.deck_kinds)
   self.armor = Armor(tile.armor_kinds, r, world.progress.ac)
+  self.myarmor = MyArmor(world.customarmor, r, world.progress.ac)
   self.my = MyAttack()
   self.enem = false
   self.attack_pause = false
@@ -1541,6 +1619,7 @@ end
 
 function Battle:draw()
   self.body:draw()
+  self.myarmor:draw()
   self.armor:draw()
   self.my:draw()
   if self.enem then
@@ -1556,8 +1635,7 @@ function Battle:attack()
     self.enem.deck[i] = table.remove(self.body.deck)
   end
 
-  -- to be armor...
-  self.my.a = self.my:count()
+  self.my.a = self.my:count(self.myarmor.kinds)
   self.enem.a = self.enem:count(self.armor.kinds)
 
   if self.my.a > self.enem.a then
@@ -1697,9 +1775,10 @@ Armor.cd = 25
 function Armor:new(armor_kinds, r, ac)
   self.guessed_arc = r + ac*5 - 1
   self.kinds = {1,1,1,1}
-  self.used_kinds = armor_kinds
+  self.used_kinds = {0,0,0,0}
   self.nk = 0
   self.tk = 0
+  self.used_kinds = armor_kinds
   for k=1,4 do
     if self.used_kinds[k] ~= 0 then
       self.tk = self.tk + 1
@@ -1715,7 +1794,6 @@ function Armor:new(armor_kinds, r, ac)
   end
 end
 
-
 function Armor:draw()
   local c = self.tk - 1
   for k_i=1, #self.kinds do
@@ -1729,6 +1807,28 @@ function Armor:draw()
       color:set(a.symc[k])
       love.graphics.print(av,self.x+self.cd*2*c-self.cd*.5,self.y-self.cd*.5)
       c = c - 1
+    end
+  end
+end
+
+-- NOTE: do not override CustomArmor.
+MyArmor = Armor:extend()
+MyArmor.x = 350
+MyArmor.y = 40
+
+function MyArmor:new(custom_armor, r, ac)
+  self.kinds = {1,1,1,1}
+  self.used_kinds = {0,0,0,0}
+  self.nk = 0
+  self.tk = 0
+  if custom_armor.slots then
+    for i,v in ipairs(custom_armor.slots) do
+      if self.used_kinds[v.sym] == 0 then
+        self.tk = self.tk + 1
+      end
+      self.used_kinds[v.sym] = self.used_kinds[v.sym] + 1
+      self.kinds[v.sym] = self.kinds[v.sym]*v.num
+      self.nk = self.nk + 1
     end
   end
 end
@@ -1780,14 +1880,17 @@ function love.load()
     saves:load(0)
     world.switch:press("save")
   end
-
 end
 
 function love.draw()
   world:draw()
+  if debugmode then
+    color:set(15)
+    love.graphics.print("debugmode",1,1)
+  end
   if debug.show then
     color:set(1)
-    love.graphics.print(debug.string,1,1)
+    love.graphics.print(debug.string,1,21)
   end
 end
 
@@ -1805,12 +1908,23 @@ end
 
 function love.update(dt)
   world:update()
-  -- require("lovebird").update()
+  if debugmode then
+    if love.keyboard.isDown("e") then
+      world.xp.v = world.xp.v + 1
+      world.progress.i = world.progress.i + 1
+    end
+    require("lovebird").update()
+  end
 end
 
 function love.keypressed(k)
-  if debugmode and k == "d" then
-    table.insert(world.drop.deck,Card())
+  if debugmode then
+    if k == "d" then
+      table.insert(world.drop.deck,Card())
+    end
+    if k == "h" then
+      table.insert(world.hand.deck,Card())
+    end
   end
   if k == "y" then
     debug.show = not debug.show
@@ -1818,6 +1932,10 @@ function love.keypressed(k)
 end
 
 function love.quit()
-  saves:save(0)
+  if  world.progress.hardcore then
+    saves:save(7)
+  else
+    saves:save(0)
+  end
   saves:file()
 end
