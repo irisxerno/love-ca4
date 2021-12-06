@@ -1713,7 +1713,7 @@ function Battle:damage()
     end
 
     if self.r == 5 then
-      if world.map.geno > 15 then
+      if world.map.geno >= 15 then
         world.progress.geno = world.progress.geno+5
       end
       world.progress.ac = world.progress.ac + 1
