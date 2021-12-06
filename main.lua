@@ -1,3 +1,9 @@
+-- loot patch
+-- timer patch
+-- fail leaderboard
+
+-- drop battle smuggle glitch?
+
 debugmode = false
 
 function table_shuf(t)
@@ -223,7 +229,7 @@ function Tile:new()
   self.i = -1
 end
 
-function Tile:generate(ac, r)
+function Tile:generate(ac, r, gp)
   local r_ac = r + ac
   self.i = 0
   while r_ac > 0 do
@@ -241,7 +247,7 @@ function Tile:generate(ac, r)
   local used_kinds = {0,0,0,0}
   for i=1,ar_c do
     local k = love.math.random(1,4)
-    if used_kinds[k] < ac + 1 then
+    if used_kinds[k] < ac + 1 + gp then
       used_kinds[k] = used_kinds[k] + 1
     end
   end
@@ -252,7 +258,7 @@ Map = Object:extend()
 Map.x = 60
 Map.y = 0
 
-function Map:new(ac)
+function Map:new(ac, gp)
   self.geno = 0
   self.ac = ac
   self.map = {}
@@ -264,7 +270,7 @@ function Map:new(ac)
   end
   for c=1,5 do
     self.map[1][c] = Tile()
-    self.map[1][c]:generate(self.ac, 1)
+    self.map[1][c]:generate(self.ac, 1, gp)
     self.map[1][c].v = 2
   end
   self.curr_layer = 1
@@ -354,7 +360,7 @@ function Map:click(x,y)
         world.battle = Battle(self.map[r][c], c, r)
       else
         local shadow = Tile()
-        shadow:generate(self.ac, r)
+        shadow:generate(self.ac, r, world.progress.gp)
         world.battle = Battle(shadow, c, r)
       end
     else
@@ -388,7 +394,7 @@ function Map:reveal(c,r)
         self.map[nr][nc].v = self.map[nr][nc].v + 1
         if self.map[nr][nc].v == 2 then
           self.map[nr][nc] = Tile()
-          self.map[nr][nc]:generate(self.ac, r)
+          self.map[nr][nc]:generate(self.ac, r, world.progress.gp)
           self.map[nr][nc].v = 2
         end
       end
@@ -865,7 +871,15 @@ LeaderboardSwitch.y = Stats.y
 LeaderboardSwitch.color = 7
 
 function LeaderboardSwitch:text()
-  return string.format("%s%%",math.floor(100*world.progress.geno/a.maxgeno))
+  return string.format("%s%%",world.progress.geno)
+end
+
+function LeaderboardSwitch:draw()
+  shapes.rectangle(self.x,self.y,Stat.w,Stat.h, self.color, self.state)
+  love.graphics.print(string.format("%s%%",world.progress.geno),self.x+(Stat.w/4),self.y+(Stat.h/5))
+  if world.progress.gp > 0 then
+    love.graphics.print(string.format("+%s", world.progress.gp),self.x+(Stat.w/3)-Stat.w,self.y+(Stat.h/5))
+  end
 end
 
 DropSwitch = Switch:extend()
@@ -882,10 +896,12 @@ MapSwitch.x = Stats.x-Stat.w
 MapSwitch.y = Stats.y+Stat.h*2
 MapSwitch.color = 14
 
-function MapSwitch:text()
-  return world.progress.ac
+function MapSwitch:draw()
+  shapes.rectangle(self.x,self.y,Stat.w,Stat.h, self.color, self.state)
+  if world.map then
+    love.graphics.print(world.progress.ac+1 .. "/5",self.x+(Stat.w/4),self.y+(Stat.h/5))
+  end
 end
-
 
 SaveSwitch = Switch:extend()
 SaveSwitch.x = Stats.x-Stat.w
@@ -1027,7 +1043,7 @@ function LeaderboardShow:draw()
     for i2,v in ipairs(leaderboards.data.normal[v1]) do
       local r, g, b = v.id
       love.graphics.setColor(r, g, b)
-      love.graphics.print(string.format("け %d.\t殺 %d%%\t亡 %d*\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), v.deaths, pretty_time(v.time)), self.x, self.y+self.t*(i2-1)+self.h*(i1-1))
+      love.graphics.print(string.format("け %d.\t殺 %d%%\t亡 %d*\t時 %s", v.i, v.geno, v.deaths, pretty_time(v.time)), self.x, self.y+self.t*(i2-1)+self.h*(i1-1))
     end
     color:set(1)
   end
@@ -1038,7 +1054,7 @@ function LeaderboardShow:draw()
     for i2,v in ipairs(leaderboards.data.hardcore[v1]) do
       local r, g, b = v.id
       love.graphics.setColor(r, g, b)
-      love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, math.floor(100*v.geno/a.maxgeno), pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h*(i1-1))
+      love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, v.geno, pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h*(i1-1))
     end
     color:set(1)
   end
@@ -1049,7 +1065,7 @@ function LeaderboardShow:draw()
 end
 
 Saves = Object:extend()
-Saves.version = 10
+Saves.version = 11
 Saves.filename = "save"
 
 if debugmode then
@@ -1130,6 +1146,7 @@ function Saves:save(ic)
   sv.ac = world.progress.ac
   sv.i = world.progress.i
   sv.geno = world.progress.geno
+  sv.gp = world.progress.gp
 
   sv.id = world.id
 
@@ -1157,6 +1174,8 @@ function Saves:load(ic)
   world.progress.ac = sv.ac
   world.progress.i = sv.i
   world.progress.geno = sv.geno
+  world.progress.gp = sv.gp
+
   -- hand
   world.hand.deck = {}
   for k,cd in ipairs(sv.hand) do
@@ -1477,7 +1496,7 @@ World = Object:extend()
 function World:new()
   self.leaderboard_show = LeaderboardShow()
   self.touch = Touch()
-  self.progress = { ac = 0, i = 0, hardcore = false, geno = 0 }
+  self.progress = { ac = 0, i = 0, hardcore = false, geno = 0, gp = 0 }
   if debugmode then
     self.progress.ac = 4
   end
@@ -1486,7 +1505,7 @@ function World:new()
   self.hand = Hand()
   self.drop = Drop()
   self.customarmor = CustomArmor()
-  self.map = Map(self.progress.ac)
+  self.map = Map(self.progress.ac, self.progress.gp)
   self.save_options = SaveOptions()
 
   self.switch = SwitchBoard()
@@ -1713,6 +1732,10 @@ function Battle:damage()
       saves:save(7)
     end
 
+    if world.progress.geno >= 20*(world.progress.gp+1) then
+      world.progress.gp = world.progress.gp + 1
+    end
+
     if self.r == 5 then
       if world.map.geno >= 15 then
         world.progress.geno = world.progress.geno+5
@@ -1720,7 +1743,7 @@ function Battle:damage()
       world.progress.ac = world.progress.ac + 1
 
       if world.progress.ac < 5 then
-        world.map = Map(world.progress.ac)
+        world.map = Map(world.progress.ac, world.progress.gp)
       else
         world.map = nil
         leaderboards:add()
