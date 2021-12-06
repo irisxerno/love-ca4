@@ -1340,7 +1340,6 @@ function HeldSave:draw()
       love.graphics.setColor(r, g, b)
       love.graphics.circle("line",x,y,20-6)
     end
-    -- love.graphics.circle("line",x,y,20-6)
   end
 end
 
