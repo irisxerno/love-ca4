@@ -1717,9 +1717,7 @@ function Battle:damage()
   self.enem = nil
 
   if self.body.hp <= 0 or debugmode then
-    for i=1,math.min(world.stats.d.v - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
-      table.insert(world.drop.deck, Card())
-    end
+
 
     world.map:reveal(self.c,self.r)
     world.map.geno = world.map.geno+1
@@ -1749,6 +1747,15 @@ function Battle:damage()
         leaderboards:add()
         world.switch:press("leaderboard")
         saves:fullclear()
+      end
+
+      local mult = 1
+      if self.r == 5 and world.map.geno < 15 then
+        mult = 2
+      end
+
+      for i=1,math.min(world.stats.d.v*mult - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
+        table.insert(world.drop.deck, Card())
       end
     end
   end
