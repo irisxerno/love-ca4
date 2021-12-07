@@ -1,8 +1,7 @@
--- loot patch
--- timer patch
+-- keyboard controls
 -- fail leaderboard
 
--- drop battle smuggle glitch?
+-- new/generate split
 
 debugmode = false
 
@@ -17,7 +16,7 @@ function table_take(t,m)
   local newt = {}
   l = 1
   for i,v in ipairs(t) do
-    if l > (m+1) then
+    if l > m then
       return newt
     end
     newt[i] = t[i]
@@ -29,11 +28,13 @@ end
 function sortbyprops(p, n)
   return function (t1, t2)
     for i,v in ipairs(p) do
-      if t1[v] ~= t2[v] then
-        if n and n[i] then
-          return t1[v] > t2[v]
-        else
-          return t1[v] < t2[v]
+      if t1[v] and t2[v] then
+        if t1[v] ~= t2[v] then
+          if n and n[i] then
+            return t1[v] > t2[v]
+          else
+            return t1[v] < t2[v]
+          end
         end
       end
     end
@@ -42,9 +43,8 @@ function sortbyprops(p, n)
 end
 
 function pretty_time(t)
-  sec = t % 60
-  min = math.floor(t/60)
-  return string.format("%02d:%02d", min, sec)
+  sec = (t * 60) % 60
+  return string.format("%02d:%02d", t, sec)
 end
 
 function RGB(r,g,b)
@@ -898,9 +898,7 @@ MapSwitch.color = 14
 
 function MapSwitch:draw()
   shapes.rectangle(self.x,self.y,Stat.w,Stat.h, self.color, self.state)
-  if world.map then
-    love.graphics.print(world.progress.ac+1 .. "/5",self.x+(Stat.w/4),self.y+(Stat.h/5))
-  end
+  love.graphics.print(world.progress.ac .. "/5",self.x+(Stat.w/4),self.y+(Stat.h/5))
 end
 
 SaveSwitch = Switch:extend()
@@ -950,7 +948,7 @@ function SwitchBoard:click(x,y)
 end
 
 Leaderboards = Object:extend()
-Leaderboards.version = 2
+Leaderboards.version = 3
 Leaderboards.filename = "leaderboards"
 
 if debugmode then
@@ -992,27 +990,30 @@ function Leaderboards:add()
     date = os.date("%F %T"),
     id = world.id,
     i = world.progress.i,
-    time = saves:get_time(),
+    time = timer:get_time()/60,
     geno = world.progress.geno
   }
   if not world.progress.hardcore then
     entry.deaths = saves.deaths
   end
   local slot
+  local sortc
   if world.progress.hardcore then
     slot = self.data.hardcore
+    sortc = 3
   else
     slot = self.data.normal
+    sortc = 5
   end
   table.insert(slot.quick,entry)
   table.sort(slot.quick, sortbyprops({"time", "i", "geno"}, {false, false, false}))
-  slot.quick = table_take(slot.quick, 5)
+  slot.quick = table_take(slot.quick, sortc)
   table.insert(slot.low,entry)
   table.sort(slot.low, sortbyprops({"i", "geno", "time"}, {false, false, false}))
-  slot.low = table_take(slot.low, 5)
+  slot.low = table_take(slot.low, sortc)
   table.insert(slot.geno,entry)
   table.sort(slot.geno, sortbyprops({"geno", "time", "i"}, {true, false, true}))
-  slot.geno = table_take(slot.geno, 5)
+  slot.geno = table_take(slot.geno, sortc)
 
   self:file()
 end
@@ -1072,15 +1073,9 @@ if debugmode then
   Saves.filename = "save_debug"
 end
 
-function Saves:get_time()
-  return saves.add_time + (love.timer.getTime() - saves.start_time)
-end
-
 function Saves:new()
   self.data = {}
   self.deaths = 0
-  self.add_time = 0
-  self.start_time = love.timer.getTime()
   local info = love.filesystem.getInfo(self.filename)
   if info then
     local contents = love.filesystem.read(self.filename)
@@ -1088,7 +1083,7 @@ function Saves:new()
     if d and d.version == self.version then
       self.data = d
       self.deaths = d.deaths
-      self.add_time = d.add_time
+      timer.add_time = d.add_time
     else
       local v = d.version
       if not v then
@@ -1231,15 +1226,14 @@ end
 
 function Saves:fullclear()
   self:clear()
-  self.start_time = love.timer.getTime()
-  self.add_time = 0
+  timer = Timer()
 end
 
 
 function Saves:file()
   self.data.version = self.version
   self.data.deaths = self.deaths
-  self.data.add_time = self:get_time()
+  self.data.add_time = timer:get_time()
   love.filesystem.write(self.filename,binser.serialize(self.data))
 end
 
@@ -1716,8 +1710,9 @@ function Battle:damage()
   self.my = MyAttack()
   self.enem = nil
 
-  if self.body.hp <= 0 or debugmode then
+  local addt = 0
 
+  if self.body.hp <= 0 or debugmode then
 
     world.map:reveal(self.c,self.r)
     world.map.geno = world.map.geno+1
@@ -1737,7 +1732,10 @@ function Battle:damage()
     if self.r == 5 then
       if world.map.geno >= 15 then
         world.progress.geno = world.progress.geno+5
+      else
+        addt = self.body.o_hp + self.armor.nk
       end
+
       world.progress.ac = world.progress.ac + 1
 
       if world.progress.ac < 5 then
@@ -1748,15 +1746,10 @@ function Battle:damage()
         world.switch:press("leaderboard")
         saves:fullclear()
       end
+    end
 
-      local mult = 1
-      if self.r == 5 and world.map.geno < 15 then
-        mult = 2
-      end
-
-      for i=1,math.min(world.stats.d.v*mult - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk) do
-        table.insert(world.drop.deck, Card())
-      end
+    for i=1,math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk)+addt do
+      table.insert(world.drop.deck, Card())
     end
   end
 
@@ -1919,11 +1912,47 @@ function MyAttack:getelem(x,y,nx)
   return nil
 end
 
+Timer = Object:extend()
+
+function Timer:new()
+  self.start_time = love.timer.getTime()
+  self.add_time = 0
+  self.idle_time = love.timer.getTime()
+  self.idle = false
+end
+
+function Timer:get_time()
+  if self.idle then
+    return self.add_time
+  else
+    return self.add_time + (love.timer.getTime() - self.start_time)
+  end
+end
+
+function Timer:get_idle()
+  return love.timer.getTime() - self.idle_time
+end
+
+function Timer:reset_idle()
+  self.add_time = self:get_time()
+  self.idle_time = love.timer.getTime()
+  self.idle = false
+  self.start_time = love.timer.getTime()
+end
+
+function Timer:update()
+  if self:get_idle() >= 60 then
+    self.add_time = self:get_time()
+    self.idle = true
+  end
+end
+
 --
 -- callbacks
 --
 
 function love.load()
+  timer = Timer()
   saves = Saves()
   leaderboards = Leaderboards()
   world = World()
@@ -1963,6 +1992,7 @@ function love.mousereleased(x,y,button)
 end
 
 function love.update(dt)
+  timer:update()
   world:update()
   if debugmode then
     if love.keyboard.isDown("e") then
@@ -1985,6 +2015,10 @@ function love.keypressed(k)
   if k == "y" then
     debug.show = not debug.show
   end
+end
+
+function love.mousemoved(x, y, dx, dy, istouch)
+  timer:reset_idle()
 end
 
 function love.quit()
