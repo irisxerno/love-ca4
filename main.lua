@@ -1,5 +1,5 @@
--- keyboard controls
 -- fail leaderboard
+-- keyboard controls
 
 -- new/generate split
 
@@ -1028,6 +1028,7 @@ LeaderboardShow.x = 40
 LeaderboardShow.y = 40
 LeaderboardShow.w = 230
 LeaderboardShow.h = 90
+LeaderboardShow.h2 = 60
 LeaderboardShow.t = 12
 LeaderboardShow.t2 = 15
 
@@ -1051,14 +1052,16 @@ function LeaderboardShow:draw()
   love.graphics.print("ハードコア", self.x+self.w, self.y-2*self.t2)
   for i1,v1 in ipairs(catg) do
     vv1 = desc[i1]
-    love.graphics.print(vv1, self.x+self.w, self.y-self.t2+self.h*(i1-1))
+    love.graphics.print(vv1, self.x+self.w, self.y-self.t2+self.h2*(i1-1))
     for i2,v in ipairs(leaderboards.data.hardcore[v1]) do
       local r, g, b = v.id
       love.graphics.setColor(r, g, b)
-      love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, v.geno, pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h*(i1-1))
+      love.graphics.print(string.format("け %d.\t殺 %d%%\t時 %s", v.i, v.geno, pretty_time(v.time)), self.x+self.w, self.y+self.t*(i2-1)+self.h2*(i1-1))
     end
     color:set(1)
   end
+  love.graphics.print("落第", self.x+self.w, self.y-self.t2+self.h*2)
+  love.graphics.print("カミングスーン", self.x+self.w, self.y-self.t2+self.h*2+self.t*2)
 
   -- love.graphics.print(inspect(leaderboards.data), self.x, self.y)
 
