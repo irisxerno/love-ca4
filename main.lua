@@ -1,7 +1,6 @@
--- fail leaderboard
--- keyboard controls
-
--- new/generate split
+-- keyboard patch
+-- autosave patch
+-- leaderboard patch
 
 debugmode = false
 
@@ -345,9 +344,8 @@ function Map:getelem(x,y)
   return nil
 end
 
-function Map:click(x,y)
+function Map:press(c, r)
   self.peek = nil
-  local c, r = self:getelem(x,y)
   if c and self.map[r][c].v > 0 then
     if self.sel and (self.sel[1] == c and self.sel[2] == r) and table.getn(world.hand.deck) > 0 then
       if not world.progress.hardcore then
@@ -383,6 +381,11 @@ function Map:click(x,y)
   else
     self.sel = nil
   end
+
+end
+
+function Map:click(x,y)
+  self:press(self:getelem(x,y))
 end
 
 function Map:reveal(c,r)
@@ -614,7 +617,7 @@ function Stat:draw(x,y)
   else
     color:set(12)
   end
-  if world.held_xp.t then
+  if world.held_xp.t or love.keyboard.isDown("lctrl") then
     love.graphics.print(self:cost(),x+Stat.w+(Stat.w/3),y+(Stat.h/5))
   end
 end
@@ -717,6 +720,9 @@ end
 function XP:update(x,y)
   self.focus = false
   if self:getelem(x,y) and world.held_cards.deck then
+    self.focus = true
+  end
+  if love.keyboard.isDown("lctrl") then
     self.focus = true
   end
 end
@@ -951,7 +957,7 @@ Leaderboards = Object:extend()
 Leaderboards.version = 3
 Leaderboards.filename = "leaderboards"
 
-if debugmode then
+if debugmode and love.keyboard.isDown("lalt") then
   Leaderboards.filename = "leaderboards_debug"
 end
 
@@ -1494,7 +1500,7 @@ function World:new()
   self.leaderboard_show = LeaderboardShow()
   self.touch = Touch()
   self.progress = { ac = 0, i = 0, hardcore = false, geno = 0, gp = 0 }
-  if debugmode then
+  if debugmode and love.keyboard.isDown("lalt") then
     self.progress.ac = 4
   end
   local r, g, b = HSL(love.math.random(), 0.5 + love.math.random()/2, 0.5)
@@ -1715,7 +1721,7 @@ function Battle:damage()
 
   local addt = 0
 
-  if self.body.hp <= 0 or debugmode then
+  if self.body.hp <= 0 or (debugmode and love.keyboard.isDown("lalt")) then
 
     world.map:reveal(self.c,self.r)
     world.map.geno = world.map.geno+1
@@ -1736,7 +1742,7 @@ function Battle:damage()
       if world.map.geno >= 15 then
         world.progress.geno = world.progress.geno+5
       else
-        addt = self.body.o_hp + self.armor.nk
+        addt = self.body.o_hp
       end
 
       world.progress.ac = world.progress.ac + 1
@@ -1751,7 +1757,7 @@ function Battle:damage()
       end
     end
 
-    for i=1,math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp + self.armor.nk)+addt do
+    for i=1,math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp)+addt do
       table.insert(world.drop.deck, Card())
     end
   end
@@ -1943,8 +1949,11 @@ function Timer:reset_idle()
   self.start_time = love.timer.getTime()
 end
 
+function Timer:is_idle()
+  return self:get_idle() >= 60
+end
 function Timer:update()
-  if self:get_idle() >= 60 then
+  if self:is_idle() then
     self.add_time = self:get_time()
     self.idle = true
   end
@@ -1972,13 +1981,21 @@ end
 
 function love.draw()
   world:draw()
+  local printer = 1
+  if timer:is_idle() then
+    color:set(4,0.5)
+    love.graphics.print("idle",1,printer)
+    printer = printer + 20
+  end
   if debugmode then
     color:set(15)
-    love.graphics.print("debugmode",1,1)
+    love.graphics.print("debugmode",1,printer)
+    printer = printer + 20
   end
   if debug.show then
     color:set(1)
-    love.graphics.print(debug.string,1,21)
+    love.graphics.print(debug.string,1,printer)
+    printer = printer + 20
   end
 end
 
@@ -1997,8 +2014,8 @@ end
 function love.update(dt)
   timer:update()
   world:update()
-  if debugmode then
-    if love.keyboard.isDown("e") then
+  if debugmode and love.keyboard.isDown("lalt") then
+    if love.keyboard.isDown("f") then
       world.xp.v = world.xp.v + 1
       world.progress.i = world.progress.i + 1
     end
@@ -2006,17 +2023,89 @@ function love.update(dt)
   end
 end
 
+keys = {
+  toprow = {
+    ["1"] = 1,
+    ["2"] = 2,
+    ["3"] = 3,
+    ["4"] = 4,
+    ["5"] = 5,
+    ["6"] = 6,
+    ["7"] = 7,
+    ["8"] = 8,
+    ["9"] = 9,
+    ["0"] = 10
+  },
+  bottomrow = {
+    q = 1,
+    w = 2,
+    e = 3,
+    r = 4,
+    t = 5,
+    y = 6,
+    u = 7,
+    i = 8,
+    o = 9,
+    p = 10
+  }
+}
+
 function love.keypressed(k)
-  if debugmode then
-    if k == "d" then
+  timer:reset_idle()
+  if debugmode and love.keyboard.isDown("lalt") then
+    if k == "a" then
       table.insert(world.drop.deck,Card())
     end
-    if k == "h" then
+    if k == "s" then
       table.insert(world.hand.deck,Card())
     end
   end
-  if k == "y" then
+  if k == "l" then
     debug.show = not debug.show
+  end
+
+  local i = keys.bottomrow[k]
+  if i then
+    local deck = world.hand.deck
+    if deck[i] then
+      deck[i].sel = not deck[i].sel
+    end
+  end
+  local i = keys.toprow[k]
+  if i and not world.battle then
+    local deck = world.drop.deck
+    if deck[i] then
+      deck[i].sel = not deck[i].sel
+    end
+  end
+
+  if k == "return" then
+    if love.keyboard.isDown("lshift") then
+      if world.battle then
+        if world.battle.death_pause or world.battle.attack_pause then
+          world.battle:damage()
+        else
+          world.battle.my.g = 1
+        end
+      else
+        world.held_cards:collect()
+        local oc = 0
+        for i, v in ipairs(world.held_cards.deck) do
+          if v.source == "hand" then
+            oc = 1
+          end
+        end
+        if oc == 0 then
+          world.hand.g = #world.hand.deck
+        else
+          world.drop.g = #world.drop.deck
+        end
+        world.held_cards:drop()
+      end
+    else
+      world.held_cards:collect()
+      world.held_cards:drop()
+    end
   end
 end
 
