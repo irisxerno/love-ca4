@@ -1,8 +1,9 @@
--- keyboard patch
 -- autosave patch
+-- keyboard 2/2 patch
+-- xp patch
 -- leaderboard patch
 
-debugmode = false
+debugmode = true
 
 function table_shuf(t)
   for i = #t, 2, -1 do
@@ -348,10 +349,14 @@ function Map:press(c, r)
   self.peek = nil
   if c and self.map[r][c].v > 0 then
     if self.sel and (self.sel[1] == c and self.sel[2] == r) and table.getn(world.hand.deck) > 0 then
-      if not world.progress.hardcore then
-        saves:save(0)
-      else
+      if world.progress.hardcore then
         saves:clear()
+      else
+        if r == 5 then
+          saves:save(3)
+        else
+          saves:save(1)
+        end
       end
       world.switch:press(false)
       if self.map[r][c].v == 2 then
@@ -638,7 +643,7 @@ function Stat:cost()
 end
 
 Stats = Object:extend()
-Stats.x = 612
+Stats.x = 600
 Stats.y = 50
 
 function Stats:new()
@@ -1285,35 +1290,34 @@ SaveSlots.x = 40
 SaveSlots.y = 60
 SaveSlots.w = 50
 SaveSlots.h = 50
-SaveSlots.c = 6
+SaveSlots.c = 8
 
 function SaveSlots:draw()
-  for i=0,self.c do
+  for i=1,self.c do
     local c = 9
-    if i == 0 then
+    if i <= 4 then
       c = 10
     end
-    shapes.rectangle(self.x+self.w*i,self.y,self.w,self.h,c,self.g == i)
+    shapes.rectangle(self.x+self.w*(i-1),self.y,self.w,self.h,c,self.g == i)
     if saves.data[i] then
-      love.graphics.print(saves.data[i].i,self.x+self.w*i+(Stat.w/8),self.y+(Stat.h/6))
+      love.graphics.print(saves.data[i].i,self.x+self.w*(i-1)+(Stat.w/8),self.y+(Stat.h/6))
       love.graphics.setFont(font_small)
-      love.graphics.print(string.format("+%s", #saves.data[i].drop),self.x+self.w*i+(Stat.w/4),self.y+(Stat.h/2))
+      love.graphics.print(string.format("+%s", #saves.data[i].drop),self.x+self.w*(i-1)+(Stat.w/4),self.y+(Stat.h/2))
       love.graphics.setFont(font)
       for j=1,saves.data[i].ac do
-        shapes.rectangle(self.x+self.w*i,self.y-(Stat.h/8)*j,SaveSlots.w,Card.h/8,5)
+        shapes.rectangle(self.x+self.w*(i-1),self.y-(Stat.h/8)*j,SaveSlots.w,Card.h/8,5)
       end
       local r, g, b = saves.data[i].id
       love.graphics.setColor(r, g, b)
-      love.graphics.rectangle("line", self.x+self.w*i+6,self.y+6,self.w-12,self.h-12)
+      love.graphics.rectangle("line", self.x+self.w*(i-1)+6,self.y+6,self.w-12,self.h-12)
     end
   end
-
 end
 
 function SaveSlots:update(x,y)
   self.g = nil
   e = self:getelem(x,y)
-  if e and world.held_save.t and world.held_save.source ~= e and (saves.data[e] or world.held_save.source ~= -2) then
+  if e and (e > 4 or (debugmode and love.keyboard.isDown("lalt"))) and world.held_save.t and world.held_save.source ~= e and (saves.data[e] or world.held_save.source ~= -2) then
     self.g = e
   end
 end
@@ -1321,8 +1325,8 @@ end
 function SaveSlots:getelem(x,y)
   local lx = (x-self.x)/self.w
   local ly = (y-self.y)/self.h
-  if ly>=0 and ly<=1 and (lx>=0 and lx<self.c+1) then
-    return clamp(math.floor(lx),0,self.c)
+  if ly>=0 and ly<=1 and (lx>=0 and lx<self.c) then
+    return clamp(math.floor(lx+1),0,self.c)
   end
   return nil
 end
@@ -1338,7 +1342,7 @@ end
 CurrentGame = Object:extend()
 CurrentGame.x = SaveSlots.x + SaveSlots.w*2
 CurrentGame.y = 180
-CurrentGame.w = SaveSlots.w*(SaveSlots.c-2)
+CurrentGame.w = SaveSlots.w*(SaveSlots.c-4)
 CurrentGame.h = SaveSlots.h
 
 function CurrentGame:draw()
@@ -1373,9 +1377,9 @@ function CurrentGame:take(x,y)
 end
 
 HardcoreGame = Object:extend()
-HardcoreGame.x = CurrentGame.x + SaveSlots.w*(SaveSlots.c-2)
+HardcoreGame.x = CurrentGame.x + SaveSlots.w*(SaveSlots.c-4)
 HardcoreGame.y = 180
-HardcoreGame.w = SaveSlots.w
+HardcoreGame.w = SaveSlots.w*2
 HardcoreGame.h = SaveSlots.h
 
 function HardcoreGame:draw()
@@ -1477,7 +1481,7 @@ function HeldSave:drop(x,y)
       world.progress.hardcore = true
       world.stats.d.v = 10
       world.switch:press("save")
-      saves:save(7)
+      saves:save(9)
     elseif self.source == -1 and world.save_options.slots.g then
       saves:save(world.save_options.slots.g)
     elseif self.source > -1 and world.save_options.current.focus then
@@ -1730,10 +1734,6 @@ function Battle:damage()
     world.battle = nil
     world.progress.geno = world.progress.geno+1
 
-    if world.progress.hardcore then
-      saves:save(7)
-    end
-
     if world.progress.geno >= 20*(world.progress.gp+1) then
       world.progress.gp = world.progress.gp + 1
     end
@@ -1755,12 +1755,18 @@ function Battle:damage()
         world.switch:press("leaderboard")
         saves:fullclear()
       end
+      saves:save(4)
+    elseif world.progress.hardcore then
+      saves:save(9)
+    else
+      saves:save(2)
     end
 
     for i=1,math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp)+addt do
       table.insert(world.drop.deck, Card())
     end
   end
+
 
   self.attack_pause = false
   self.scale = 0
@@ -1969,8 +1975,8 @@ function love.load()
   leaderboards = Leaderboards()
   world = World()
   world.switch:press("drop")
-  if saves.data[7] then
-    saves:load(7)
+  if saves.data[9] then
+    saves:load(9)
     world.progress.hardcore = true
     world.switch:press("map")
   elseif saves.data[0] then
@@ -2047,7 +2053,7 @@ keys = {
     i = 8,
     o = 9,
     p = 10
-  }
+  },
 }
 
 function love.keypressed(k)
@@ -2071,6 +2077,7 @@ function love.keypressed(k)
       deck[i].sel = not deck[i].sel
     end
   end
+
   local i = keys.toprow[k]
   if i and not world.battle then
     local deck = world.drop.deck
@@ -2080,30 +2087,31 @@ function love.keypressed(k)
   end
 
   if k == "return" then
-    if love.keyboard.isDown("lshift") then
-      if world.battle then
-        if world.battle.death_pause or world.battle.attack_pause then
-          world.battle:damage()
-        else
-          world.battle.my.g = 1
-        end
-      else
-        world.held_cards:collect()
-        local oc = 0
-        for i, v in ipairs(world.held_cards.deck) do
-          if v.source == "hand" then
-            oc = 1
-          end
-        end
-        if oc == 0 then
-          world.hand.g = #world.hand.deck
-        else
-          world.drop.g = #world.drop.deck
-        end
-        world.held_cards:drop()
-      end
+    if world.battle and (world.battle.death_pause or world.battle.attack_pause) then
+      world.battle:damage()
     else
       world.held_cards:collect()
+
+
+
+      if love.keyboard.isDown("lshift") then
+        if world.battle then
+          world.battle.my.g = 1
+        else
+          local oc = 0
+          for i, v in ipairs(world.held_cards.deck) do
+            if v.source == "hand" then
+              oc = 1
+            end
+          end
+
+          if oc == 0 then
+            world.hand.g = #world.hand.deck
+          else
+            world.drop.g = #world.drop.deck
+          end
+        end
+      end
       world.held_cards:drop()
     end
   end
@@ -2115,9 +2123,9 @@ end
 
 function love.quit()
   if  world.progress.hardcore then
-    saves:save(7)
+    saves:save(9)
   else
-    saves:save(0)
+    saves:save(1)
   end
   saves:file()
 end
