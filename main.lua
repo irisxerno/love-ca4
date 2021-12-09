@@ -1,7 +1,6 @@
--- xp patch
 -- leaderboard patch
 
-debugmode = true
+debugmode = false
 debugkey = "pagedown"
 
 function debugfun()
@@ -828,7 +827,7 @@ function HeldCards:drop()
     elseif world.xp.focus then
       world.xp.v = world.xp.v + table.getn(self.deck)
       world.progress.i = world.progress.i + table.getn(self.deck)
-    elseif world.battle and world.battle.my.g and world.stats.ma.v >= (table.getn(self.deck)) then
+    elseif world.battle and world.battle.my.g and table.getn(self.deck) > 0 and world.stats.ma.v >= (table.getn(self.deck)) then
       for k,cd in ipairs(self.deck) do
         table.insert(world.battle.my.deck, world.battle.my.g, cd:clean())
         world.battle.my.g = world.battle.my.g + 1
@@ -1300,6 +1299,22 @@ function Saves:newgame_hardcore()
   saves:save(9)
 end
 
+function Saves:reset_reset()
+  if not world.battle then
+    return
+  end
+  world = World()
+  if not world.progress.hardcore then
+    saves:load(1)
+    saves.deaths = saves.deaths + 1
+    saves:file()
+    world.switch:press("map")
+  else
+    saves:fullclear()
+    world.switch:press("saves")
+  end
+end
+
 SaveOptions = Object:extend()
 
 function SaveOptions:new()
@@ -1616,6 +1631,7 @@ function Battle:damage()
   local addt = 0
 
   if self.body.hp <= 0 or (debugfun()) then
+    local save_slot = 2
 
     world.map:reveal(self.c,self.r)
     world.map.geno = world.map.geno+1
@@ -1645,19 +1661,20 @@ function Battle:damage()
         world.switch:press("leaderboard")
         saves:fullclear()
       end
-      saves:save(4)
+      save_slot = 4
     elseif world.progress.hardcore then
-      saves:save(9)
-    else
-      saves:save(2)
+      save_slot = 9
     end
 
-    local drops = math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp)
+    local want_drop = math.ceil(self.body.o_hp/2)
+    local drops = math.min((world.stats.d.v) - table.getn(world.drop.deck), want_drop)
     local rest = self.body.o_hp - drops
     for i=1,drops+addt do
       table.insert(world.drop.deck, Card())
     end
     world.xp.v = world.xp.v + rest
+
+    saves:save(save_slot)
   end
 
 
@@ -1707,15 +1724,7 @@ function Body:click(x,y)
     if not self.reset_button then
       self.reset_button = true
     else
-      world = World()
-      if not world.progress.hardcore then
-        saves:load(1)
-        saves.deaths = saves.deaths + 1
-        saves:file()
-        world.switch:press("map")
-      else
-        saves:fullclear()
-      end
+      saves:reset_reset()
     end
   elseif self.reset_button then
     self.reset_button = false
@@ -2126,16 +2135,18 @@ function Keyboard:keypressed(k)
       world.xp.focus = false
       world.held_cards:collect()
       world.held_cards:drop()
-    elseif is and is == 3 and love.keyboard.isDown("lalt") then
-      if love.keyboard.isDown("lshift") then
-        saves:newgame_hardcore()
-        world.switch:press("save")
-      else
-        saves:newgame()
-        world.switch:press("drop")
-      end
     elseif is then
-      world.switch:press(world.switch.list[is])
+      if is == 3 and love.keyboard.isDown("lalt") then
+        if love.keyboard.isDown("lshift") then
+          saves:newgame_hardcore()
+          world.switch:press("save")
+        else
+          saves:newgame()
+          world.switch:press("drop")
+        end
+      else
+        world.switch:press(world.switch.list[is])
+      end
     end
 
     if world.map then
@@ -2155,6 +2166,8 @@ function Keyboard:keypressed(k)
         world.map.sel = nil
       end
     end
+  elseif k == "x" and love.keyboard.isDown("lalt") then
+    saves:reset_reset()
   end
 end
 
