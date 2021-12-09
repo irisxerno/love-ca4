@@ -3,7 +3,12 @@
 -- xp patch
 -- leaderboard patch
 
-debugmode = true
+debugmode = false
+debugkey = "pagedown"
+
+function debugfun()
+  return debugmode and love.keyboard.isDown(debugkey)
+end
 
 function table_shuf(t)
   for i = #t, 2, -1 do
@@ -132,13 +137,13 @@ end
 -- shapes
 shapes = {}
 function shapes.triangle(x,y,w,h,ss, sss)
-  if ss == -1 then
-    do return end
-  end
+
   local p1 = { x,y+h, x+w,y+h, x+w/2,y }
   local p2 = { x+8,y+h-4, x+w-8,y+h-4, x+w/2,y+8 }
-  color:set(7,0.5)
-  love.graphics.polygon("fill",p1)
+  if ss ~= -1 then
+    color:set(7,0.5)
+    love.graphics.polygon("fill",p1)
+  end
   if ss == 2 then
     color:set(1)
     love.graphics.polygon("line",p2)
@@ -259,6 +264,7 @@ Map.x = 60
 Map.y = 0
 
 function Map:new(ac, gp)
+  keyboard.map_cursor = { 1, 1 }
   self.geno = 0
   self.ac = ac
   self.map = {}
@@ -279,15 +285,13 @@ end
 function Map:draw()
   for r=1,5 do
     for c=1,(6-r) do
-      if self.map[r][c].v ~= -1 then
-        local sss = nil
-        if self.sel and (self.sel[1] == c and self.sel[2] == r) then
-          sss = true
-        end
-        shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v, sss)
-        if self.map[r][c].v == 2 then
-          love.graphics.print(self.map[r][c].i,Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2)+Tile.w*.3, Map.y+Tile.h*(6-r-1)+Tile.h*.43)
-        end
+      local sss = nil
+      if self.sel and (self.sel[1] == c and self.sel[2] == r) then
+        sss = true
+      end
+      shapes.triangle(Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2), Map.y+Tile.h*(6-r-1), Tile.w, Tile.h, self.map[r][c].v, sss)
+      if self.map[r][c].v == 2 then
+        love.graphics.print(self.map[r][c].i,Map.x+Tile.w*(c-1)+(Tile.w*(r-1)/2)+Tile.w*.3, Map.y+Tile.h*(6-r-1)+Tile.h*.43)
       end
     end
   end
@@ -345,48 +349,70 @@ function Map:getelem(x,y)
   return nil
 end
 
+function Map:enter_battle(c, r)
+  if not (c >= 1 and c <= 5 and r >= 1 and r <= 6-c) then
+    return
+  end
+
+  if self.map[r][c].v < 1 and (not debugfun()) then
+    return
+  end
+
+  self.sel = nil
+  self.peek = nil
+  if world.progress.hardcore then
+    saves:clear()
+  else
+    if r == 5 then
+      saves:save(3)
+    else
+      saves:save(1)
+    end
+  end
+  world.switch:press(false)
+  if self.map[r][c].v == 2 then
+    world.battle = Battle(self.map[r][c], c, r)
+  else
+    local shadow = Tile()
+    shadow:generate(self.ac, r, world.progress.gp)
+    world.battle = Battle(shadow, c, r)
+  end
+end
+
+function Map:select(c, r)
+  if not (c >= 1 and c <= 5 and r >= 1 and r <= 6-c) then
+    return
+  end
+
+  self.peek = nil
+  self.sel = {c, r}
+  if self.map[r][c].v == 2 then
+    local e = self.map[r][c]
+    local armor_kind = {}
+    local deck_kind = {}
+    for k=1,4 do
+      for i=1,e.armor_kinds[k] do
+        table.insert(armor_kind, k)
+      end
+      for i=1,e.deck_kinds[k] do
+        table.insert(deck_kind, k)
+      end
+    end
+    self.peek = { armor = armor_kind ,deck = deck_kind }
+end
+
+end
 function Map:press(c, r)
   self.peek = nil
   if c and self.map[r][c].v > 0 then
     if self.sel and (self.sel[1] == c and self.sel[2] == r) and table.getn(world.hand.deck) > 0 then
-      if world.progress.hardcore then
-        saves:clear()
-      else
-        if r == 5 then
-          saves:save(3)
-        else
-          saves:save(1)
-        end
-      end
-      world.switch:press(false)
-      if self.map[r][c].v == 2 then
-        world.battle = Battle(self.map[r][c], c, r)
-      else
-        local shadow = Tile()
-        shadow:generate(self.ac, r, world.progress.gp)
-        world.battle = Battle(shadow, c, r)
-      end
+      self:enter_battle(c, r)
     else
-      self.sel = {c, r}
-      if self.map[r][c].v == 2 then
-        local e = self.map[r][c]
-        local armor_kind = {}
-        local deck_kind = {}
-        for k=1,4 do
-          for i=1,e.armor_kinds[k] do
-            table.insert(armor_kind, k)
-          end
-          for i=1,e.deck_kinds[k] do
-            table.insert(deck_kind, k)
-          end
-        end
-        self.peek = { armor = armor_kind ,deck = deck_kind }
-      end
+      self:select(c, r)
     end
   else
     self.sel = nil
   end
-
 end
 
 function Map:click(x,y)
@@ -686,6 +712,8 @@ function Stats:buy(d)
   if e:cost() <= world.xp.v then
     world.xp.v = world.xp.v - e:cost()
     e.v = e.v + 1
+  elseif (debugfun()) then
+    e.v = e.v + 1
   end
 end
 
@@ -727,7 +755,7 @@ function XP:update(x,y)
   if self:getelem(x,y) and world.held_cards.deck then
     self.focus = true
   end
-  if love.keyboard.isDown("lctrl") then
+  if not world.battle and love.keyboard.isDown("lctrl") then
     self.focus = true
   end
 end
@@ -787,10 +815,7 @@ end
 function HeldCards:drop()
   -- put limit here
   if self.deck then
-    if world.xp.focus then
-      world.xp.v = world.xp.v + table.getn(self.deck)
-      world.progress.i = world.progress.i + table.getn(self.deck)
-    elseif world.hand.g and world.stats.hs.v >= (table.getn(world.hand.deck) + table.getn(self.deck)) then
+    if world.hand.g and world.stats.hs.v >= (table.getn(world.hand.deck) + table.getn(self.deck)) then
       for k,cd in ipairs(self.deck) do
         table.insert(world.hand.deck, world.hand.g, cd:clean())
         world.hand.g = world.hand.g + 1
@@ -802,6 +827,9 @@ function HeldCards:drop()
       end
     elseif world.customarmor.sel and #self.deck == 1 then
       world.customarmor.slots[world.customarmor.sel] = self.deck[1]
+    elseif world.xp.focus then
+      world.xp.v = world.xp.v + table.getn(self.deck)
+      world.progress.i = world.progress.i + table.getn(self.deck)
     elseif world.battle and world.battle.my.g and world.stats.ma.v >= (table.getn(self.deck)) then
       for k,cd in ipairs(self.deck) do
         table.insert(world.battle.my.deck, world.battle.my.g, cd:clean())
@@ -962,7 +990,7 @@ Leaderboards = Object:extend()
 Leaderboards.version = 3
 Leaderboards.filename = "leaderboards"
 
-if debugmode and love.keyboard.isDown("lalt") then
+if debugmode then
   Leaderboards.filename = "leaderboards_debug"
 end
 
@@ -1121,6 +1149,11 @@ function Saves:save(ic)
   if world.battle then
     return
   end
+
+  if ic ~= 0 then
+    self:save(0)
+  end
+
   self.data[ic] = {}
   local sv = self.data[ic]
   -- hand
@@ -1251,6 +1284,24 @@ function Saves:file()
   love.filesystem.write(self.filename,binser.serialize(self.data))
 end
 
+function Saves:copy(source, dest)
+  self.data[dest] = self.data[source]
+  self:file()
+end
+
+function Saves:newgame()
+  self:fullclear()
+  world = World()
+  world.switch:press("save")
+end
+
+function Saves:newgame_hardcore()
+  self:newgame()
+  world.progress.hardcore = true
+  world.stats.d.v = 10
+  saves:save(9)
+end
+
 SaveOptions = Object:extend()
 
 function SaveOptions:new()
@@ -1317,7 +1368,7 @@ end
 function SaveSlots:update(x,y)
   self.g = nil
   e = self:getelem(x,y)
-  if e and (e > 4 or (debugmode and love.keyboard.isDown("lalt"))) and world.held_save.t and world.held_save.source ~= e and (saves.data[e] or world.held_save.source ~= -2) then
+  if e and (e > 4 or (debugfun())) and world.held_save.t and world.held_save.source ~= e and (saves.data[e] or world.held_save.source ~= -2) then
     self.g = e
   end
 end
@@ -1469,180 +1520,21 @@ function HeldSave:drop(x,y)
   if self.t then
     -- do things like save
     if self.source == -2 and world.save_options.current.focus then
-      saves:fullclear()
-      world = World()
-      world.switch:press("save")
+      saves:newgame()
     elseif self.source == -2 and world.save_options.slots.g then
       saves:delete(world.save_options.slots.g)
       saves:file()
     elseif self.source == -2 and world.save_options.hardcore.focus then
-      saves:fullclear()
-      world = World()
-      world.progress.hardcore = true
-      world.stats.d.v = 10
-      world.switch:press("save")
-      saves:save(9)
+      saves:newgame_hardcore()
     elseif self.source == -1 and world.save_options.slots.g then
       saves:save(world.save_options.slots.g)
     elseif self.source > -1 and world.save_options.current.focus then
       saves:load(self.source)
     elseif self.source > -1 and world.save_options.slots.g then
-      saves.data[world.save_options.slots.g] = saves.data[self.source]
-      saves:file()
+      saves:copy(self.source, world.save_options.slots.g)
     end
   end
   self.t = false
-end
-
---
--- World
---
-
-World = Object:extend()
-
-function World:new()
-  self.leaderboard_show = LeaderboardShow()
-  self.touch = Touch()
-  self.progress = { ac = 0, i = 0, hardcore = false, geno = 0, gp = 0 }
-  if debugmode and love.keyboard.isDown("lalt") then
-    self.progress.ac = 4
-  end
-  local r, g, b = HSL(love.math.random(), 0.5 + love.math.random()/2, 0.5)
-  self.id = {r, g , b}
-  self.hand = Hand()
-  self.drop = Drop()
-  self.customarmor = CustomArmor()
-  self.map = Map(self.progress.ac, self.progress.gp)
-  self.save_options = SaveOptions()
-
-  self.switch = SwitchBoard()
-  self.stats = Stats()
-  self.xp = XP()
-
-  self.held_cards = HeldCards()
-  self.held_xp = HeldXP()
-  self.held_save = HeldSave()
-end
-
-function World:draw()
-  love.graphics.setLineWidth(2)
-  color:set(8,true)
-
-  if self.switch.leaderboard.state then
-    self.leaderboard_show:draw()
-  end
-
-
-  if not world.battle then
-    self.stats:draw()
-    self.xp:draw()
-    self.switch:draw()
-  else
-    self.battle:draw()
-  end
-
-  self.hand:draw()
-
-  if self.switch.drop.state then
-    self.customarmor:draw()
-    self.drop:draw()
-  end
-
-  self.held_cards:draw()
-  self.held_xp:draw()
-  self.held_save:draw()
-
-
-  if self.switch.map.state and world.map then
-    self.map:draw()
-  end
-
-  if self.switch.save.state then
-    self.save_options:draw()
-  end
-end
-
-function World:update()
-  local x, y = love.mouse.getPosition()
-
-  world.touch:update(x,y)
-  world.held_cards:update(x,y)
-  world.xp:update(x,y)
-  world.customarmor:update(x,y)
-  world.stats:update(x,y)
-  world.save_options:update(x,y)
-
-end
-
-Touch = Object:extend()
-Touch.selarea = 20
-
-function Touch:new()
-  self.state = nil
-end
-
-function Touch:pressed(x,y)
-  self.x, self.y = x, y
-  if world.battle and world.battle.attack_pause then
-    world.battle:damage()
-    self.state = nil
-  elseif world.battle and world.battle.death_pause then
-    world = World()
-    if not world.progress.hardcore then
-      saves:load(0)
-      saves.deaths = saves.deaths + 1
-      saves:file()
-      world.switch:press("map")
-    else
-      saves:fullclear()
-    end
-    self.state = nil
-  else
-    self.state = "touch"
-  end
-end
-
-function Touch:released(x,y)
-  if self.state == "touch" then
-    local touched = false
-    if world.hand:click(x,y,self.x,self.y) then
-      touched = true
-    end
-    if world.switch.drop.state then
-      if world.drop:click(x,y,self.x,self.y) then
-        touched = true
-      end
-    end
-    if not world.battle and not touched then
-      world.switch:click(x,y)
-    end
-    if world.switch.map.state and world.map then
-      world.map:click(x,y)
-    end
-
-  elseif self.state == "drag" then
-    world.held_cards:drop()
-    world.held_xp:drop(x,y)
-    world.held_save:drop(x,y)
-  end
-  if world.battle then
-    world.battle.body:click(x,y)
-  end
-  self.state = nil
-end
-
-function Touch:update(x,y)
-  if self.state == "touch" and not (x-self.selarea<self.x and x+self.selarea>self.x and
-  y-self.selarea<self.y and y+self.selarea>self.y) then
-    self.state = "drag"
-    world.held_cards:take(self.x,self.y)
-    if not world.battle then
-      world.xp:take(self.x,self.y)
-    end
-    if world.switch.save.state then
-      world.save_options:take(self.x,self.y)
-    end
-  end
 end
 
 
@@ -1725,7 +1617,7 @@ function Battle:damage()
 
   local addt = 0
 
-  if self.body.hp <= 0 or (debugmode and love.keyboard.isDown("lalt")) then
+  if self.body.hp <= 0 or (debugfun()) then
 
     world.map:reveal(self.c,self.r)
     world.map.geno = world.map.geno+1
@@ -1816,7 +1708,7 @@ function Body:click(x,y)
     else
       world = World()
       if not world.progress.hardcore then
-        saves:load(0)
+        saves:load(1)
         saves.deaths = saves.deaths + 1
         saves:file()
         world.switch:press("map")
@@ -1927,6 +1819,342 @@ function MyAttack:getelem(x,y,nx)
   return nil
 end
 
+--
+-- World
+--
+
+World = Object:extend()
+
+function World:new()
+  self.leaderboard_show = LeaderboardShow()
+  self.touch = Touch()
+  self.progress = { ac = 0, i = 0, hardcore = false, geno = 0, gp = 0 }
+  if debugfun() then
+    self.progress.ac = 4
+  end
+  local r, g, b = HSL(love.math.random(), 0.5 + love.math.random()/2, 0.5)
+  self.id = {r, g , b}
+  self.hand = Hand()
+  self.drop = Drop()
+  self.customarmor = CustomArmor()
+  self.map = Map(self.progress.ac, self.progress.gp)
+  self.save_options = SaveOptions()
+
+  self.switch = SwitchBoard()
+  self.stats = Stats()
+  self.xp = XP()
+
+  self.held_cards = HeldCards()
+  self.held_xp = HeldXP()
+  self.held_save = HeldSave()
+end
+
+function World:draw()
+  love.graphics.setLineWidth(2)
+  color:set(8,true)
+
+  if self.switch.leaderboard.state then
+    self.leaderboard_show:draw()
+  end
+
+
+  if not world.battle then
+    self.stats:draw()
+    self.xp:draw()
+    self.switch:draw()
+  else
+    self.battle:draw()
+  end
+
+  self.hand:draw()
+
+  if self.switch.drop.state then
+    self.customarmor:draw()
+    self.drop:draw()
+  end
+
+  self.held_cards:draw()
+  self.held_xp:draw()
+  self.held_save:draw()
+
+
+  if self.switch.map.state and world.map then
+    self.map:draw()
+  end
+
+  if self.switch.save.state then
+    self.save_options:draw()
+  end
+end
+
+function World:update()
+  local x, y = love.mouse.getPosition()
+
+  world.touch:update(x,y)
+  world.held_cards:update(x,y)
+  world.xp:update(x,y)
+  world.customarmor:update(x,y)
+  world.stats:update(x,y)
+  world.save_options:update(x,y)
+
+end
+
+function World:death_reset()
+  world = World()
+  if not world.progress.hardcore then
+    saves:load(1)
+    saves.deaths = saves.deaths + 1
+    saves:file()
+    world.switch:press("map")
+  else
+    saves:fullclear()
+  end
+end
+
+Touch = Object:extend()
+Touch.selarea = 20
+
+function Touch:new()
+  self.state = nil
+end
+
+function Touch:pressed(x,y)
+  self.x, self.y = x, y
+  if world.battle and world.battle.attack_pause then
+    world.battle:damage()
+    self.state = nil
+  elseif world.battle and world.battle.death_pause then
+    world:death_reset()
+  else
+    self.state = "touch"
+  end
+end
+
+function Touch:released(x,y)
+  if self.state == "touch" then
+    local touched = false
+    if world.hand:click(x,y,self.x,self.y) then
+      touched = true
+    end
+    if world.switch.drop.state then
+      if world.drop:click(x,y,self.x,self.y) then
+        touched = true
+      end
+    end
+    if not world.battle and not touched then
+      world.switch:click(x,y)
+    end
+    if world.switch.map.state and world.map then
+      world.map:click(x,y)
+    end
+
+  elseif self.state == "drag" then
+    world.held_cards:drop()
+    world.held_xp:drop(x,y)
+    world.held_save:drop(x,y)
+  end
+  if world.battle then
+    world.battle.body:click(x,y)
+  end
+  self.state = nil
+end
+
+function Touch:update(x,y)
+  if self.state == "touch" and not (x-self.selarea<self.x and x+self.selarea>self.x and
+  y-self.selarea<self.y and y+self.selarea>self.y) then
+    self.state = "drag"
+    world.held_cards:take(self.x,self.y)
+    if not world.battle then
+      world.xp:take(self.x,self.y)
+    end
+    if world.switch.save.state then
+      world.save_options:take(self.x,self.y)
+    end
+  end
+end
+
+Keyboard = Object:extend()
+Keyboard.keys = {
+  armorrow = {
+    f1 = 1,
+    f2 = 2,
+    f3 = 3,
+    f4 = 4,
+    f5 = 5,
+    f6 = 6,
+    f7 = 7,
+    f8 = 8,
+    f9 = 9,
+    f10 = 10
+  },
+  toprow = {
+    q = 1,
+    w = 2,
+    e = 3,
+    r = 4,
+    t = 5,
+    y = 6,
+    u = 7,
+    i = 8,
+    o = 9,
+    p = 10
+  },
+  armorrow = {
+    ["1"] = 1,
+    ["2"] = 2,
+    ["3"] = 3,
+    ["4"] = 4,
+    ["5"] = 5,
+    ["6"] = 6,
+    ["7"] = 7,
+    ["8"] = 8,
+    ["9"] = 9,
+    ["0"] = 10
+  },
+  bottomrow = {
+    a = 1,
+    s = 2,
+    d = 3,
+    f = 4,
+    g = 5,
+    h = 6,
+    j = 7,
+    k = 8,
+    l = 9,
+    [";"] = 10
+  },
+  switchrow = {
+    z = 4,
+    x = 3,
+    c = 2,
+    v = 1
+  },
+  statsrow = {
+    b = 1,
+    n = 2,
+    m = 3,
+    [","] = 4,
+  },
+  movekeys = {
+    up = {0, 1},
+    down = {0, -1},
+    right = {1, 0},
+    left = {-1, 0}
+  }
+}
+
+function Keyboard:new(k)
+  self.map_cursor = {1,1}
+end
+
+function Keyboard:keypressed(k)
+  if debugfun() then
+    if k == "a" then
+      table.insert(world.drop.deck,Card())
+    elseif k == "s" then
+      table.insert(world.hand.deck,Card())
+    elseif k == "l" then
+      debug.show = not debug.show
+    end
+  end
+
+  local i = self.keys.bottomrow[k]
+  if i then
+    local deck = world.hand.deck
+    if deck[i] then
+      deck[i].sel = not deck[i].sel
+    end
+  elseif k == "return" then
+    if world.battle and world.battle.attack_pause then
+      world.battle:damage()
+    elseif world.battle and world.battle.death_pause then
+      world:death_reset()
+    elseif world.map and world.map.sel then
+      world.map:enter_battle(world.map.sel[1],world.map.sel[2])
+    else
+      world.held_cards:collect()
+
+      if love.keyboard.isDown("lshift") then
+        if world.battle then
+          world.battle.my.g = 1
+        else
+          local oc = 0
+          for i, v in ipairs(world.held_cards.deck) do
+            if v.source == "hand" then
+              oc = 1
+            end
+          end
+
+          if oc == 0 then
+            world.hand.g = #world.hand.deck+1
+          else
+            world.drop.g = #world.drop.deck+1
+          end
+        end
+      end
+      world.held_cards:drop()
+    end
+  end
+
+  if not world.battle then
+    local it = self.keys.toprow[k]
+    local iss = self.keys.statsrow[k]
+    local ia = self.keys.armorrow[k]
+    local is = self.keys.switchrow[k]
+    if it then
+      world.switch:press("drop")
+      local deck = world.drop.deck
+      if deck[it] then
+        deck[it].sel = not deck[it].sel
+      end
+    elseif iss and love.keyboard.isDown("lctrl") then
+      world.stats:buy(iss)
+    elseif ia and love.keyboard.isDown("lalt") and ia <= 8 then
+      world.switch:press("save")
+      if love.keyboard.isDown("lshift") then
+        if ia > 4 or debugfun() then
+          saves:save(ia)
+        end
+      else
+        saves:load(ia)
+      end
+    elseif ia and love.keyboard.isDown("lctrl") and i <= world.stats.ca.v then
+      world.customarmor.sel = i
+      world.xp.focus = false
+      world.held_cards:collect()
+      world.held_cards:drop()
+    elseif is and is == 3 and love.keyboard.isDown("lalt") then
+      if love.keyboard.isDown("lctrl") then
+        saves:newgame_hardcore()
+        world.switch:press("save")
+      else
+        saves:newgame()
+        world.switch:press("drop")
+      end
+    elseif is then
+      world.switch:press(world.switch.list[is])
+    end
+
+    if world.map then
+      local v = self.keys.movekeys[k]
+      if v and world.map then
+        world.switch:press("map")
+        if world.map.sel then
+          nx = self.map_cursor[1]+v[1]
+          ny = self.map_cursor[2]+v[2]
+          if nx >= 1 and nx <= 5 and ny >= 1 and ny <= 6-nx then
+            self.map_cursor = { nx, ny }
+          end
+        end
+        world.map:select(self.map_cursor[1],self.map_cursor[2])
+      else
+        world.map.peek = nil
+        world.map.sel = nil
+      end
+    end
+  end
+end
+
 Timer = Object:extend()
 
 function Timer:new()
@@ -1970,6 +2198,7 @@ end
 --
 
 function love.load()
+  keyboard = Keyboard()
   timer = Timer()
   saves = Saves()
   leaderboards = Leaderboards()
@@ -1981,7 +2210,7 @@ function love.load()
     world.switch:press("map")
   elseif saves.data[0] then
     saves:load(0)
-    world.switch:press("save")
+    world.switch:press("map")
   end
 end
 
@@ -2020,101 +2249,20 @@ end
 function love.update(dt)
   timer:update()
   world:update()
-  if debugmode and love.keyboard.isDown("lalt") then
-    if love.keyboard.isDown("f") then
-      world.xp.v = world.xp.v + 1
-      world.progress.i = world.progress.i + 1
-    end
+  if debugmode then
     require("lovebird").update()
+    if love.keyboard.isDown(debugkey) then
+      if love.keyboard.isDown("f") then
+        world.xp.v = world.xp.v + 1
+        world.progress.i = world.progress.i + 1
+      end
+    end
   end
 end
 
-keys = {
-  toprow = {
-    ["1"] = 1,
-    ["2"] = 2,
-    ["3"] = 3,
-    ["4"] = 4,
-    ["5"] = 5,
-    ["6"] = 6,
-    ["7"] = 7,
-    ["8"] = 8,
-    ["9"] = 9,
-    ["0"] = 10
-  },
-  bottomrow = {
-    q = 1,
-    w = 2,
-    e = 3,
-    r = 4,
-    t = 5,
-    y = 6,
-    u = 7,
-    i = 8,
-    o = 9,
-    p = 10
-  },
-}
-
 function love.keypressed(k)
   timer:reset_idle()
-  if debugmode and love.keyboard.isDown("lalt") then
-    if k == "a" then
-      table.insert(world.drop.deck,Card())
-    end
-    if k == "s" then
-      table.insert(world.hand.deck,Card())
-    end
-  end
-  if k == "l" then
-    debug.show = not debug.show
-  end
-
-  local i = keys.bottomrow[k]
-  if i then
-    local deck = world.hand.deck
-    if deck[i] then
-      deck[i].sel = not deck[i].sel
-    end
-  end
-
-  local i = keys.toprow[k]
-  if i and not world.battle then
-    local deck = world.drop.deck
-    if deck[i] then
-      deck[i].sel = not deck[i].sel
-    end
-  end
-
-  if k == "return" then
-    if world.battle and (world.battle.death_pause or world.battle.attack_pause) then
-      world.battle:damage()
-    else
-      world.held_cards:collect()
-
-
-
-      if love.keyboard.isDown("lshift") then
-        if world.battle then
-          world.battle.my.g = 1
-        else
-          local oc = 0
-          for i, v in ipairs(world.held_cards.deck) do
-            if v.source == "hand" then
-              oc = 1
-            end
-          end
-
-          if oc == 0 then
-            world.hand.g = #world.hand.deck
-          else
-            world.drop.g = #world.drop.deck
-          end
-        end
-      end
-      world.held_cards:drop()
-    end
-  end
+  keyboard:keypressed(k)
 end
 
 function love.mousemoved(x, y, dx, dy, istouch)
@@ -2125,7 +2273,7 @@ function love.quit()
   if  world.progress.hardcore then
     saves:save(9)
   else
-    saves:save(1)
+    saves:save(0)
   end
   saves:file()
 end
