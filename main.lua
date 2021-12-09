@@ -1,9 +1,7 @@
--- autosave patch
--- keyboard 2/2 patch
 -- xp patch
 -- leaderboard patch
 
-debugmode = false
+debugmode = true
 debugkey = "pagedown"
 
 function debugfun()
@@ -1654,9 +1652,12 @@ function Battle:damage()
       saves:save(2)
     end
 
-    for i=1,math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp)+addt do
+    local drops = math.min((world.stats.d.v) - table.getn(world.drop.deck), self.body.o_hp)
+    local rest = self.body.o_hp - drops
+    for i=1,drops+addt do
       table.insert(world.drop.deck, Card())
     end
+    world.xp.v = world.xp.v + rest
   end
 
 
@@ -2024,10 +2025,10 @@ Keyboard.keys = {
     [";"] = 10
   },
   switchrow = {
-    z = 4,
-    x = 3,
-    c = 2,
-    v = 1
+    z = 1,
+    x = 2,
+    c = 3,
+    v = 4
   },
   statsrow = {
     b = 1,
@@ -2101,6 +2102,8 @@ function Keyboard:keypressed(k)
     local iss = self.keys.statsrow[k]
     local ia = self.keys.armorrow[k]
     local is = self.keys.switchrow[k]
+
+
     if it then
       world.switch:press("drop")
       local deck = world.drop.deck
@@ -2108,7 +2111,7 @@ function Keyboard:keypressed(k)
         deck[it].sel = not deck[it].sel
       end
     elseif iss and love.keyboard.isDown("lctrl") then
-      world.stats:buy(iss)
+      world.stats:buy(5 - iss)
     elseif ia and love.keyboard.isDown("lalt") and ia <= 8 then
       world.switch:press("save")
       if love.keyboard.isDown("lshift") then
@@ -2124,7 +2127,7 @@ function Keyboard:keypressed(k)
       world.held_cards:collect()
       world.held_cards:drop()
     elseif is and is == 3 and love.keyboard.isDown("lalt") then
-      if love.keyboard.isDown("lctrl") then
+      if love.keyboard.isDown("lshift") then
         saves:newgame_hardcore()
         world.switch:press("save")
       else
