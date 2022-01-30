@@ -563,8 +563,6 @@ Hand.source = "hand"
 
 function Hand:draw()
   Deck.draw(self)
-  -- color:set(7)
-  -- love.graphics.rectangle("fill",self.x,self.y+Card.h,Card.w*world.stats.hs.v,Card.h/4)
   local cc = 7
   if world.battle and world.battle.death_pause then
     cc = 9
@@ -1099,8 +1097,6 @@ function LeaderboardShow:draw()
   love.graphics.print("落第", self.x+self.w, self.y-self.t2+self.h*2)
   love.graphics.print("カミングスーン", self.x+self.w, self.y-self.t2+self.h*2+self.t*2)
 
-  -- love.graphics.print(inspect(leaderboards.data), self.x, self.y)
-
   love.graphics.setFont(font)
 end
 
@@ -1295,7 +1291,6 @@ end
 function Saves:newgame_hardcore()
   self:newgame()
   world.progress.hardcore = true
-  world.stats.d.v = 10
   saves:save(9)
 end
 
@@ -1305,7 +1300,7 @@ function Saves:reset_reset()
   end
   world = World()
   if not world.progress.hardcore then
-    saves:load(1)
+    saves:load(0)
     saves.deaths = saves.deaths + 1
     saves:file()
     world.switch:press("map")
@@ -1638,8 +1633,8 @@ function Battle:damage()
 
     world.switch:press("drop")
     world.battle = nil
-    world.progress.geno = world.progress.geno+1
 
+    world.progress.geno = world.progress.geno+1
     if world.progress.geno >= 20*(world.progress.gp+1) then
       world.progress.gp = world.progress.gp + 1
     end
@@ -1647,6 +1642,9 @@ function Battle:damage()
     if self.r == 5 then
       if world.map.geno >= 15 then
         world.progress.geno = world.progress.geno+5
+        if world.progress.geno >= 20*(world.progress.gp+1) then
+          world.progress.gp = world.progress.gp + 1
+        end
       else
         addt = self.body.o_hp
       end
@@ -1666,13 +1664,13 @@ function Battle:damage()
       save_slot = 9
     end
 
-    local want_drop = math.ceil(self.body.o_hp/2)
+    local want_drop = self.body.o_hp + self.armor.nk
     local drops = math.min((world.stats.d.v) - table.getn(world.drop.deck), want_drop)
     local rest = self.body.o_hp - drops
     for i=1,drops+addt do
       table.insert(world.drop.deck, Card())
     end
-    world.xp.v = world.xp.v + rest
+    -- world.xp.v = world.xp.v + rest
 
     saves:save(save_slot)
   end
@@ -1912,12 +1910,13 @@ end
 function World:death_reset()
   world = World()
   if not world.progress.hardcore then
-    saves:load(1)
+    saves:load(0)
     saves.deaths = saves.deaths + 1
     saves:file()
     world.switch:press("map")
   else
     saves:fullclear()
+    saves:newgame_hardcore()
   end
 end
 
@@ -2130,8 +2129,8 @@ function Keyboard:keypressed(k)
       else
         saves:load(ia)
       end
-    elseif ia and love.keyboard.isDown("lctrl") and i <= world.stats.ca.v then
-      world.customarmor.sel = i
+    elseif ia and love.keyboard.isDown("lctrl") and ia <= world.stats.ca.v then
+      world.customarmor.sel = ia
       world.xp.focus = false
       world.held_cards:collect()
       world.held_cards:drop()
